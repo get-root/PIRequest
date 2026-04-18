@@ -6,9 +6,12 @@ local DEDUP_WINDOW = 10  -- secondes
 
 PIReq.requestCooldowns = {}  -- [senderName] = timestamp
 
--- Détermine le canal de broadcast selon le contexte (M+ ou Raid).
+-- Détermine le canal de broadcast selon le contexte.
+-- En M+, le groupe est un "instance group" → canal INSTANCE_CHAT.
 local function GroupChannel()
     if IsInRaid() then return "RAID" end
+    if IsInRaid(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    if IsInGroup(LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
     if IsInGroup() then return "PARTY" end
     return nil
 end
