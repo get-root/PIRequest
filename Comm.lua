@@ -47,7 +47,15 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
         if not PIReq.isPriest then return end
 
         -- Double vérification : l'expéditeur est bien dans le groupe.
-        if not UnitInParty(senderName) and not UnitInRaid(senderName) then return end
+        local inGroup = false
+        for i = 1, GetNumGroupMembers() do
+            local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
+            if UnitExists(token) then
+                local n = Ambiguate(GetUnitName(token, true) or "", "short")
+                if n == senderName then inGroup = true; break end
+            end
+        end
+        if not inGroup then return end
 
         -- Déduplication.
         local now = GetTime()

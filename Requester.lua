@@ -3,10 +3,22 @@
 
 PIReq.knownPriests = {}
 
+-- Retourne true si `name` est dans le groupe courant.
+local function IsNameInGroup(name)
+    for i = 1, GetNumGroupMembers() do
+        local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
+        if UnitExists(token) then
+            local n = Ambiguate(GetUnitName(token, true) or "", "short")
+            if n == name then return true end
+        end
+    end
+    return false
+end
+
 -- Purge les prêtres qui ne sont plus dans le groupe.
 function PIReq_PurgePriests()
-    for name, data in pairs(PIReq.knownPriests) do
-        if not UnitInParty(name) and not UnitInRaid(name) then
+    for name in pairs(PIReq.knownPriests) do
+        if not IsNameInGroup(name) then
             PIReq.knownPriests[name] = nil
         end
     end
@@ -18,8 +30,8 @@ function PIReq_SendRequest()
 
     -- Cherche un prêtre valide dans le registre.
     local target = nil
-    for name, data in pairs(PIReq.knownPriests) do
-        if UnitInParty(name) or UnitInRaid(name) then
+    for name in pairs(PIReq.knownPriests) do
+        if IsNameInGroup(name) then
             target = name
             break
         end
