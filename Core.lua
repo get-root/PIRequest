@@ -43,8 +43,11 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif cmd == "status" then
                 print("|cff00ff00[PIRequest]|r isPriest=" .. tostring(PIReq.isPriest)
                     .. "  spec=" .. tostring(GetSpecialization()))
+            elseif cmd == "debug" then
+                PIReq.debugMode = not PIReq.debugMode
+                print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
             else
-                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | status")
+                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | status | debug")
             end
         end
 

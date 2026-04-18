@@ -44,23 +44,36 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
 
     elseif message == "REQUEST" then
         -- Côté prêtre : traite la requête.
-        if not PIReq.isPriest then return end
+        if PIReq.debugMode then print("[PIReq] REQUEST reçu de " .. senderName) end
+
+        if not PIReq.isPriest then
+            if PIReq.debugMode then print("[PIReq] BLOQUÉ : isPriest=false") end
+            return
+        end
 
         -- Double vérification : l'expéditeur est bien dans le groupe.
         local inGroup = false
-        for i = 1, GetNumGroupMembers() do
+        local members = GetNumGroupMembers()
+        for i = 1, members do
             local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
             if UnitExists(token) then
                 local n = Ambiguate(GetUnitName(token, true) or "", "short")
+                if PIReq.debugMode then print("[PIReq] membre " .. i .. " = " .. n) end
                 if n == senderName then inGroup = true; break end
             end
         end
-        if not inGroup then return end
+        if not inGroup then
+            if PIReq.debugMode then print("[PIReq] BLOQUÉ : " .. senderName .. " pas trouvé dans " .. members .. " membres") end
+            return
+        end
 
         -- Déduplication.
         local now = GetTime()
         local last = PIReq.requestCooldowns[senderName]
-        if last and (now - last) < DEDUP_WINDOW then return end
+        if last and (now - last) < DEDUP_WINDOW then
+            if PIReq.debugMode then print("[PIReq] BLOQUÉ : dédup (" .. string.format("%.1f", now - last) .. "s)") end
+            return
+        end
         PIReq.requestCooldowns[senderName] = now
 
         -- Déclenche le highlight.
