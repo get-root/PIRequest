@@ -27,6 +27,7 @@ coreFrame:RegisterEvent("ADDON_LOADED")
 coreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 coreFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 coreFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+coreFrame:RegisterEvent("CHALLENGE_MODE_START")
 
 coreFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
@@ -52,7 +53,11 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
         end
 
     elseif event == "PLAYER_ENTERING_WORLD"
-        or event == "PLAYER_SPECIALIZATION_CHANGED"
+        or event == "CHALLENGE_MODE_START" then
+        C_ChatInfo.RegisterAddonMessagePrefix(ADDON_NAME)
+        OnRoleUpdate()
+
+    elseif event == "PLAYER_SPECIALIZATION_CHANGED"
         or event == "GROUP_ROSTER_UPDATE" then
         OnRoleUpdate()
     end
