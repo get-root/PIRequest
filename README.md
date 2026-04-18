@@ -10,7 +10,7 @@ World of Warcraft addon allowing a DPS to signal a healer Priest that they want 
 
 - The **Priest** broadcasts their presence (`HELLO:HOLY` or `HELLO:DISC`) to the group on login and roster changes.
 - The **DPS** clicks a macro that whispers a `REQUEST` to the detected priest.
-- The **Priest** sees a pulsing golden border on the DPS's raid frame for 15 seconds.
+- The **Priest** sees a pulsing golden border on the DPS's raid frame for 15 seconds, and a 5-second notification aura (PI icon + player name).
 
 Both players must have the addon installed.
 
@@ -33,10 +33,17 @@ Both players must have the addon installed.
 /cast [Your DPS Spell]
 ```
 
+### Priest Commands
+
+```
+/pirequest test      -- trigger a test notification with your own name
+/pirequest status    -- show isPriest flag and current spec number
+```
+
 ### Debug Commands
 
 ```
-/run PIReq_SendRequest()               -- test sending a request
+/run PIReq_SendRequest()               -- test sending a request (DPS)
 /run print(PIReq.knownPriests)         -- show known priests registry
 /run print(GetSpellCooldown(10060))    -- check PI cooldown
 ```
@@ -53,7 +60,7 @@ Both players must have the addon installed.
 
 ## Roadmap
 
-- **V1 (current):** Dynamic priest discovery, request sending, raid frame highlight, deduplication
+- **V1 (current):** Dynamic priest discovery, request sending, raid frame highlight, notification aura, deduplication
 - **V2 (planned):** `ACK` reply if PI available, `COOLDOWN:XX` reply if on cooldown
 
 ---

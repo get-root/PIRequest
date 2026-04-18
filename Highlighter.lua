@@ -77,20 +77,17 @@ end
 
 -- Crée ou rafraîchit le highlight sur le frame du joueur.
 function PIReq_Highlight(playerName)
+    -- Notification aura toujours affichée, indépendamment du raid frame.
+    ShowNotification(playerName)
+
     local unitToken = FindUnitToken(playerName)
-    if not unitToken then
-        print("|cffff6600[PIRequest]|r Frame introuvable pour " .. playerName .. ".")
-        return
-    end
+    if not unitToken then return end
 
     -- Supprime un éventuel highlight existant sur ce joueur.
     RemoveHighlight(unitToken)
 
     local raidFrame = FindRaidFrame(unitToken)
-    if not raidFrame then
-        print("|cffff6600[PIRequest]|r Frame de raid introuvable pour " .. playerName .. ".")
-        return
-    end
+    if not raidFrame then return end
 
     -- Crée l'overlay de bordure dorée.
     local overlay = CreateFrame("Frame", nil, raidFrame)
