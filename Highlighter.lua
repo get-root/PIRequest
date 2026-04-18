@@ -237,3 +237,6 @@ function PIReq_ClearHighlight(playerName)
     local unitToken = FindUnitToken(playerName)
     if unitToken then RemoveHighlight(unitToken) end
 end
+
+-- Pré-création du frame de notification hors combat (CreateFrame interdit en combat).
+GetNotifFrame()
