@@ -4,8 +4,10 @@
 PIReq.knownPriests = {}
 
 -- Retourne true si `name` est dans le groupe courant.
+-- Utilise une plage fixe car GetNumGroupMembers() retourne 0 en instance group (M+).
 local function IsNameInGroup(name)
-    for i = 1, GetNumGroupMembers() do
+    local maxMembers = IsInRaid() and 40 or 4
+    for i = 1, maxMembers do
         local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
         if UnitExists(token) then
             local n = Ambiguate(GetUnitName(token, true) or "", "short")

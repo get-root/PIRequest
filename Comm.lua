@@ -52,9 +52,10 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
         end
 
         -- Double vérification : l'expéditeur est bien dans le groupe.
+        -- Plage fixe (GetNumGroupMembers() retourne 0 en instance group M+).
         local inGroup = false
-        local members = GetNumGroupMembers()
-        for i = 1, members do
+        local maxMembers = IsInRaid() and 40 or 4
+        for i = 1, maxMembers do
             local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
             if UnitExists(token) then
                 local n = Ambiguate(GetUnitName(token, true) or "", "short")
@@ -63,7 +64,7 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
             end
         end
         if not inGroup then
-            if PIReq.debugMode then print("[PIReq] BLOQUÉ : " .. senderName .. " pas trouvé dans " .. members .. " membres") end
+            if PIReq.debugMode then print("[PIReq] BLOQUÉ : " .. senderName .. " pas trouvé dans le groupe") end
             return
         end
 
