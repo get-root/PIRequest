@@ -45,6 +45,9 @@ function PIReq_SendRequest()
         return
     end
 
-    C_ChatInfo.SendAddonMessage("PIRequest", "REQUEST", "WHISPER", target)
+    -- Canal PARTY pour compatibilité M+ (WHISPER addon bloqué en challenge mode).
+    -- Le nom du prêtre cible est embarqué dans le message.
+    local channel = IsInRaid() and "RAID" or "PARTY"
+    C_ChatInfo.SendAddonMessage("PIRequest", "REQUEST:" .. target, channel)
     print("|cff00ff00[PIRequest]|r Requête PI envoyée à " .. target .. ".")
 end

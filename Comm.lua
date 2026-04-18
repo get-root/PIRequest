@@ -31,6 +31,9 @@ end
 local commFrame = CreateFrame("Frame")
 commFrame:RegisterEvent("CHAT_MSG_ADDON")
 commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, sender)
+    if PIReq.debugMode then
+        print("[PIReq] ADDON MSG reçu: prefix=" .. tostring(prefix) .. " chan=" .. tostring(channel))
+    end
     if prefix ~= ADDON_NAME then return end
 
     -- Normalise le nom de l'expéditeur (supprime le realm si même realm).
@@ -42,29 +45,20 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
         local spec = (message == "HELLO:DISC") and "DISC" or "HOLY"
         PIReq.knownPriests[senderName] = { spec = spec, inGroup = true }
 
-    elseif message == "REQUEST" then
-        -- Côté prêtre : traite la requête.
-        if PIReq.debugMode then print("[PIReq] REQUEST reçu de " .. senderName) end
+    elseif message:sub(1, 8) == "REQUEST:" then
+        -- Côté prêtre : traite la requête (format "REQUEST:NomDuPrêtre").
+        local targetName = message:sub(9)
+        if PIReq.debugMode then print("[PIReq] REQUEST reçu de " .. senderName .. " pour " .. targetName) end
 
         if not PIReq.isPriest then
             if PIReq.debugMode then print("[PIReq] BLOQUÉ : isPriest=false") end
             return
         end
 
-        -- Double vérification : l'expéditeur est bien dans le groupe.
-        -- Plage fixe (GetNumGroupMembers() retourne 0 en instance group M+).
-        local inGroup = false
-        local maxMembers = IsInRaid() and 40 or 4
-        for i = 1, maxMembers do
-            local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
-            if UnitExists(token) then
-                local n = Ambiguate(GetUnitName(token, true) or "", "short")
-                if PIReq.debugMode then print("[PIReq] membre " .. i .. " = " .. n) end
-                if n == senderName then inGroup = true; break end
-            end
-        end
-        if not inGroup then
-            if PIReq.debugMode then print("[PIReq] BLOQUÉ : " .. senderName .. " pas trouvé dans le groupe") end
+        -- Vérifie que ce message nous est bien adressé.
+        local myName = Ambiguate(GetUnitName("player", true) or "", "short")
+        if targetName ~= myName then
+            if PIReq.debugMode then print("[PIReq] IGNORÉ : adressé à " .. targetName .. " (moi=" .. myName .. ")") end
             return
         end
 
