@@ -1,0 +1,10 @@
+# Release archives
+*.zip
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp

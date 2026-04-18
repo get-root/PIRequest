@@ -1,0 +1,10 @@
+## Interface: 120001
+## Title: PIRequest
+## Notes: Signale à ton prêtre heal que tu veux une Power Infusion.
+## Author: amp
+## Version: 1.0.0
+
+Core.lua
+Comm.lua
+Requester.lua
+Highlighter.lua
