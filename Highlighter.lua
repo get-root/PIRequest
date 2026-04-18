@@ -193,7 +193,7 @@ local notifTimer  = nil
 local function GetNotifFrame()
     if notifFrame then return notifFrame end
 
-    local f = CreateFrame("Frame", "PIReqNotifFrame", UIParent, "BackdropTemplate")
+    local f = CreateFrame("Frame", "PIReqNotifFrame", UIParent)
     f:SetSize(260, 80)
     f:SetPoint("TOP", UIParent, "TOP", 0, -220)
     f:SetFrameStrata("HIGH")
@@ -203,22 +203,35 @@ local function GetNotifFrame()
     f:SetScript("OnDragStart", f.StartMoving)
     f:SetScript("OnDragStop",  f.StopMovingOrSizing)
 
-    f:SetBackdrop({
-        bgFile   = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        edgeSize = 16,
-        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    f:SetBackdropColor(0, 0, 0, 0.88)
-    f:SetBackdropBorderColor(1, 0.84, 0, 1)
+    -- Fond semi-transparent
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(f)
+    bg:SetColorTexture(0, 0, 0, 0.88)
+
+    -- Bordure dorée (4 textures)
+    local B = 2
+    local function MakeBorder(p1, p2, x1, y1, x2, y2)
+        local t = f:CreateTexture(nil, "BORDER")
+        t:SetColorTexture(1, 0.84, 0, 1)
+        t:SetPoint(p1, f, p1, x1, y1)
+        t:SetPoint(p2, f, p2, x2, y2)
+    end
+    MakeBorder("TOPLEFT",    "TOPRIGHT",    0,  0,  0,  -B)
+    MakeBorder("BOTTOMLEFT", "BOTTOMRIGHT", 0,  B,  0,   0)
+    MakeBorder("TOPLEFT",    "BOTTOMLEFT",  0, -B,  B,   B)
+    MakeBorder("TOPRIGHT",   "BOTTOMRIGHT",-B, -B,  0,   B)
 
     -- Icône Power Infusion
     local icon = f:CreateTexture(nil, "ARTWORK")
     icon:SetSize(56, 56)
     icon:SetPoint("LEFT", f, "LEFT", 12, 0)
-    local spellTex = C_Spell.GetSpellTexture(PI_SPELL_ID)
-    icon:SetTexture(spellTex)
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local spellTex = (C_Spell and C_Spell.GetSpellTexture)
+                     and C_Spell.GetSpellTexture(PI_SPELL_ID)
+                     or  GetSpellTexture and GetSpellTexture(PI_SPELL_ID)
+    if spellTex then
+        icon:SetTexture(spellTex)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
     f.icon = icon
 
     -- Nom du joueur
@@ -236,7 +249,6 @@ local function GetNotifFrame()
     subText:SetJustifyH("LEFT")
     subText:SetTextColor(1, 0.84, 0, 1)
     subText:SetText("veut une Power Infusion !")
-    f.subText = subText
 
     f:Hide()
     notifFrame = f
@@ -244,16 +256,21 @@ local function GetNotifFrame()
 end
 
 local function ShowNotification(playerName)
-    local f = GetNotifFrame()
-    f.nameText:SetText(playerName)
-    f:SetAlpha(1)
-    f:Show()
+    local ok, err = pcall(function()
+        local f = GetNotifFrame()
+        f.nameText:SetText(playerName)
+        f:SetAlpha(1)
+        f:Show()
 
-    if notifTimer then notifTimer:Cancel() end
-    notifTimer = C_Timer.NewTimer(NOTIF_DURATION, function()
-        f:Hide()
-        notifTimer = nil
+        if notifTimer then notifTimer:Cancel() end
+        notifTimer = C_Timer.NewTimer(NOTIF_DURATION, function()
+            f:Hide()
+            notifTimer = nil
+        end)
     end)
+    if not ok then
+        print("|cffff6600[PIRequest]|r Erreur notification : " .. tostring(err))
+    end
 end
 
 -- ---------------------------------------------------------------------------
