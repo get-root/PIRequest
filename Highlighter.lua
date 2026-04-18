@@ -31,13 +31,30 @@ end
 
 -- Trouve le frame de raid Blizzard associé à un unit token.
 local function FindRaidFrame(unitToken)
-    -- CompactRaidFrames (interface Blizzard par défaut)
+    -- Méthode 1 : frames de raid nommées directement (_G["CompactRaidFrame1"] etc.)
+    for i = 1, 40 do
+        local f = _G["CompactRaidFrame" .. i]
+        if f and f.unit == unitToken then return f end
+    end
+
+    -- Méthode 2 : frames de groupe M+ (raid-style party frames)
+    if CompactPartyFrame then
+        local function ScanChildren(parent)
+            for _, child in ipairs({ parent:GetChildren() }) do
+                if child.unit and child.unit == unitToken then return child end
+                local found = ScanChildren(child)
+                if found then return found end
+            end
+        end
+        local found = ScanChildren(CompactPartyFrame)
+        if found then return found end
+    end
+
+    -- Méthode 3 : scan de CompactRaidFrameContainer (raid)
     if CompactRaidFrameContainer then
         local function ScanChildren(parent)
             for _, child in ipairs({ parent:GetChildren() }) do
-                if child.unit and child.unit == unitToken then
-                    return child
-                end
+                if child.unit and child.unit == unitToken then return child end
                 local found = ScanChildren(child)
                 if found then return found end
             end
@@ -45,6 +62,7 @@ local function FindRaidFrame(unitToken)
         local found = ScanChildren(CompactRaidFrameContainer)
         if found then return found end
     end
+
     return nil
 end
 
@@ -161,7 +179,87 @@ function PIReq_Highlight(playerName)
         startTime = startTime,
         ticker    = ticker,
     }
+
+    ShowNotification(playerName)
 end
+
+-- ---------------------------------------------------------------------------
+-- Notification aura (icône PI + nom du joueur)
+-- ---------------------------------------------------------------------------
+
+local NOTIF_DURATION = 5  -- secondes
+local PI_SPELL_ID    = 10060
+
+local notifFrame = nil
+local notifTimer  = nil
+
+local function GetNotifFrame()
+    if notifFrame then return notifFrame end
+
+    local f = CreateFrame("Frame", "PIReqNotifFrame", UIParent, "BackdropTemplate")
+    f:SetSize(260, 80)
+    f:SetPoint("TOP", UIParent, "TOP", 0, -220)
+    f:SetFrameStrata("HIGH")
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop",  f.StopMovingOrSizing)
+
+    f:SetBackdrop({
+        bgFile   = "Interface/Tooltips/UI-Tooltip-Background",
+        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
+        edgeSize = 16,
+        insets   = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    f:SetBackdropColor(0, 0, 0, 0.88)
+    f:SetBackdropBorderColor(1, 0.84, 0, 1)
+
+    -- Icône Power Infusion
+    local icon = f:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(56, 56)
+    icon:SetPoint("LEFT", f, "LEFT", 12, 0)
+    local spellTex = C_Spell.GetSpellTexture(PI_SPELL_ID)
+    icon:SetTexture(spellTex)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    f.icon = icon
+
+    -- Nom du joueur
+    local nameText = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    nameText:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -6)
+    nameText:SetPoint("RIGHT",   f,    "RIGHT",   -10,  0)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetTextColor(1, 1, 1, 1)
+    f.nameText = nameText
+
+    -- Sous-titre
+    local subText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    subText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -4)
+    subText:SetPoint("RIGHT",   f,        "RIGHT",     -10, 0)
+    subText:SetJustifyH("LEFT")
+    subText:SetTextColor(1, 0.84, 0, 1)
+    subText:SetText("veut une Power Infusion !")
+    f.subText = subText
+
+    f:Hide()
+    notifFrame = f
+    return f
+end
+
+local function ShowNotification(playerName)
+    local f = GetNotifFrame()
+    f.nameText:SetText(playerName)
+    f:SetAlpha(1)
+    f:Show()
+
+    if notifTimer then notifTimer:Cancel() end
+    notifTimer = C_Timer.NewTimer(NOTIF_DURATION, function()
+        f:Hide()
+        notifTimer = nil
+    end)
+end
+
+-- ---------------------------------------------------------------------------
 
 -- Supprime le highlight après cast de PI (à appeler depuis un suivi de spell cast — V2).
 function PIReq_ClearHighlight(playerName)
