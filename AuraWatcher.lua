@@ -1,8 +1,6 @@
 -- PIRequest — AuraWatcher.lua
 -- Côté prêtre : observe les auras IMPORTANT des coéquipiers via UNIT_AURA.
--- Blizzard classe nativement les gros CDs offensifs (Combustion, Témérité,
--- Dragonrage…) avec le filtre "HELPFUL|IMPORTANT".
--- Détection via C_UnitAuras.IsAuraFilteredOutByInstanceID (retourne false = match).
+print("|cff00ff00[PIRequest]|r AuraWatcher.lua chargé.")
 
 local DEDUP_WINDOW = 10  -- secondes entre deux alertes pour le même joueur
 
@@ -21,7 +19,6 @@ local function HasImportantAura(unit)
             print("[PIReq] IMPORTANT aura sur " .. unit .. " : " .. (ok and name or "<tainted>"))
         end
         return true
-        i = i + 1
     end
     return false
 end
