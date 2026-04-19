@@ -16,9 +16,9 @@ end
 local function OnRoleUpdate()
     PIReq.isPriest = IsPriestHealer()
     if PIReq.isPriest then
-        PIReq_BroadcastHello()
+        PIReq_StartWatching()
     else
-        PIReq_PurgePriests()
+        PIReq_StopWatching()
     end
 end
 
@@ -27,13 +27,10 @@ coreFrame:RegisterEvent("ADDON_LOADED")
 coreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 coreFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 coreFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-coreFrame:RegisterEvent("CHALLENGE_MODE_START")
-coreFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 
 coreFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
-        C_ChatInfo.RegisterAddonMessagePrefix(ADDON_NAME)
 
         SLASH_PIREQUEST1 = "/pirequest"
         SlashCmdList["PIREQUEST"] = function(msg)
@@ -45,109 +42,17 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif cmd == "status" then
                 print("|cff00ff00[PIRequest]|r isPriest=" .. tostring(PIReq.isPriest)
                     .. "  spec=" .. tostring(GetSpecialization()))
-            elseif cmd == "testdps" then
-                -- Envoie directement un yell "." sans vérifier le registre des prêtres.
-                -- Permet de tester la mécanique yell même sans prêtre dans le groupe.
-                local now = GetTime()
-                if now - (PIReq.lastSendTime or 0) < 10 then
-                    print("|cffff6600[PIRequest]|r Test DPS : cooldown actif, attends " .. string.format("%.0f", 10 - (now - PIReq.lastSendTime)) .. "s.")
-                else
-                    SendChatMessage(".", "YELL")
-                    PIReq.lastSendTime = now
-                    print("|cff00ff00[PIRequest]|r Test DPS : yell envoyé.")
-                end
-            elseif cmd:sub(1, 11) == "whispertest" then
-                -- TEST whisper : envoie un whisper "." au joueur spécifié.
-                local target = strtrim(cmd:sub(12))
-                if target == "" then
-                    print("|cffff6600[PIReq-WhisperTest]|r Usage : /pirequest whispertest <nom>")
-                else
-                    SendChatMessage(".", "WHISPER", nil, target)
-                    print("|cff00ffff[PIReq-WhisperTest]|r Whisper envoyé à " .. target .. ".")
-                end
-            elseif cmd == "makemacro" then
-                -- Crée (ou met à jour) un macro "PIReqTest" avec la commande canal custom.
-                local playerName = UnitName("player")
-                local body = "/PIRequest REQUEST:" .. playerName
-                local idx = GetMacroIndexByName("PIReqTest")
-                if idx and idx > 0 then
-                    EditMacro(idx, "PIReqTest", nil, body)
-                    print("|cff00ffff[PIReq-ChanTest]|r Macro 'PIReqTest' mis à jour.")
-                else
-                    CreateMacro("PIReqTest", "INV_MISC_QUESTIONMARK", body)
-                    print("|cff00ffff[PIReq-ChanTest]|r Macro 'PIReqTest' créé. Glisse-le sur ta barre d'action.")
-                end
-                print("|cff00ffff[PIReq-ChanTest]|r Contenu : " .. body)
-            elseif cmd == "joinchan" then
-                -- TEST canal custom : rejoint le canal "PIRequest".
-                JoinChannelByName("PIRequest")
-                local num = GetChannelName("PIRequest")
-                if num and num > 0 then
-                    print("|cff00ffff[PIReq-ChanTest]|r Canal PIRequest rejoint (n°" .. num .. ").")
-                else
-                    print("|cffff6600[PIReq-ChanTest]|r Canal PIRequest introuvable après join.")
-                end
-            elseif cmd == "chantest" then
-                -- TEST canal custom : envoie un message de test dans le canal "PIRequest".
-                local num = GetChannelName("PIRequest")
-                if not num or num == 0 then
-                    print("|cffff6600[PIReq-ChanTest]|r Canal PIRequest introuvable. Fais /pirequest joinchan d'abord.")
-                else
-                    SendChatMessage("CHAN_TEST", "CHANNEL", nil, num)
-                    print("|cff00ffff[PIReq-ChanTest]|r Message envoyé sur le canal n°" .. num .. ".")
-                end
             elseif cmd == "debug" then
                 PIReq.debugMode = not PIReq.debugMode
                 print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
             else
-                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | testdps | joinchan | chantest | makemacro | status | debug")
+                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | status | debug")
             end
         end
 
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        C_ChatInfo.RegisterAddonMessagePrefix(ADDON_NAME)
-        OnRoleUpdate()
-
-    elseif event == "CHALLENGE_MODE_START" then
-        -- WoW purge les registrations après avoir lancé cet event.
-        -- On re-register en différé (frame suivante) pour passer après le nettoyage.
-        C_Timer.After(0, function()
-            PIReq_ReregisterComm()
-            OnRoleUpdate()
-        end)
-
-    elseif event == "PLAYER_REGEN_DISABLED" then
-        -- Filet de sécurité : re-register au premier combat (début de clé).
-        PIReq_ReregisterComm()
-
-    elseif event == "PLAYER_SPECIALIZATION_CHANGED"
+    elseif event == "PLAYER_ENTERING_WORLD"
+        or event == "PLAYER_SPECIALIZATION_CHANGED"
         or event == "GROUP_ROSTER_UPDATE" then
         OnRoleUpdate()
     end
-end)
-
--- TEST : écoute tous les messages de canaux (pour détecter ce qui passe en M+).
-local chanTestFrame = CreateFrame("Frame")
-chanTestFrame:RegisterEvent("CHAT_MSG_CHANNEL")
-chanTestFrame:SetScript("OnEvent", function(self, event, message, sender, _, _, _, _, chanNum, chanName)
-    local ok1, msg      = pcall(tostring, message)
-    local ok2, sName    = pcall(Ambiguate, sender, "short")
-    local ok3, cNum     = pcall(tostring, chanNum)
-    local ok4, cName    = pcall(tostring, chanName)
-    print("|cff00ffff[PIReq-ChanTest]|r canal=" .. (ok3 and cNum or "<tainted>")
-        .. " (" .. (ok4 and cName or "<tainted>") .. ")"
-        .. " de=" .. (ok2 and sName or "<tainted>")
-        .. " msg=" .. (ok1 and msg or "<tainted>"))
-end)
-
--- TEST : écoute les whispers reçus.
-local whisperTestFrame = CreateFrame("Frame")
-whisperTestFrame:RegisterEvent("CHAT_MSG_WHISPER")
-whisperTestFrame:SetScript("OnEvent", function(self, event, message, sender)
-    local ok1, senderName = pcall(Ambiguate, sender, "short")
-    local ok2, msg       = pcall(tostring, message)
-    print("|cff00ffff[PIReq-WhisperTest]|r Reçu de "
-        .. (ok1 and senderName or "<tainted>")
-        .. " : "
-        .. (ok2 and msg or "<tainted>"))
 end)

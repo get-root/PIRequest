@@ -5,6 +5,5 @@
 ## Version: 1.0.0
 
 Core.lua
-Comm.lua
-Requester.lua
+AuraWatcher.lua
 Highlighter.lua
