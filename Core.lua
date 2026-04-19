@@ -32,6 +32,8 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
 
+        print("|cff00ff00[PIRequest]|r chargé. isPriest=" .. tostring(IsPriestHealer()))
+
         SLASH_PIREQUEST1 = "/pirequest"
         SlashCmdList["PIREQUEST"] = function(msg)
             local cmd = strtrim(msg):lower()
@@ -42,11 +44,34 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif cmd == "status" then
                 print("|cff00ff00[PIRequest]|r isPriest=" .. tostring(PIReq.isPriest)
                     .. "  spec=" .. tostring(GetSpecialization()))
+            elseif cmd == "scan" then
+                -- Scanne manuellement les membres du groupe pour auras IMPORTANT.
+                local found = false
+                local maxMembers = IsInRaid() and 40 or 4
+                for i = 1, maxMembers do
+                    local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
+                    if UnitExists(token) then
+                        local name = Ambiguate(GetUnitName(token, true) or "", "short")
+                        print("|cff00ff00[PIRequest]|r scan " .. token .. " = " .. name)
+                        local j = 1
+                        while true do
+                            local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, token, j, "HELPFUL|IMPORTANT")
+                            if not ok or not auraData then break end
+                            local okN, aName = pcall(tostring, auraData.name)
+                            print("  → IMPORTANT : " .. (okN and aName or "<tainted>"))
+                            j = j + 1
+                        end
+                        found = true
+                    end
+                end
+                if not found then
+                    print("|cffff6600[PIRequest]|r Aucun membre de groupe trouvé.")
+                end
             elseif cmd == "debug" then
                 PIReq.debugMode = not PIReq.debugMode
                 print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
             else
-                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | status | debug")
+                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | scan | status | debug")
             end
         end
 
