@@ -113,13 +113,18 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
--- TEST : écoute les messages du canal custom "PIRequest".
+-- TEST : écoute tous les messages de canaux (pour détecter ce qui passe en M+).
 local chanTestFrame = CreateFrame("Frame")
 chanTestFrame:RegisterEvent("CHAT_MSG_CHANNEL")
-chanTestFrame:SetScript("OnEvent", function(self, event, message, sender, _, _, _, _, _, chanName)
-    if chanName ~= "PIRequest" then return end
-    local senderName = Ambiguate(sender, "short")
-    print("|cff00ffff[PIReq-ChanTest]|r Reçu de " .. senderName .. " : " .. message)
+chanTestFrame:SetScript("OnEvent", function(self, event, message, sender, _, _, _, _, chanNum, chanName)
+    local ok1, msg      = pcall(tostring, message)
+    local ok2, sName    = pcall(Ambiguate, sender, "short")
+    local ok3, cNum     = pcall(tostring, chanNum)
+    local ok4, cName    = pcall(tostring, chanName)
+    print("|cff00ffff[PIReq-ChanTest]|r canal=" .. (ok3 and cNum or "<tainted>")
+        .. " (" .. (ok4 and cName or "<tainted>") .. ")"
+        .. " de=" .. (ok2 and sName or "<tainted>")
+        .. " msg=" .. (ok1 and msg or "<tainted>"))
 end)
 
 -- TEST : écoute les whispers reçus.
