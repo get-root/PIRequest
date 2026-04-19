@@ -56,6 +56,15 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
                     PIReq.lastSendTime = now
                     print("|cff00ff00[PIRequest]|r Test DPS : yell envoyé.")
                 end
+            elseif cmd:sub(1, 11) == "whispertest" then
+                -- TEST whisper : envoie un whisper "." au joueur spécifié.
+                local target = strtrim(cmd:sub(12))
+                if target == "" then
+                    print("|cffff6600[PIReq-WhisperTest]|r Usage : /pirequest whispertest <nom>")
+                else
+                    SendChatMessage(".", "WHISPER", nil, target)
+                    print("|cff00ffff[PIReq-WhisperTest]|r Whisper envoyé à " .. target .. ".")
+                end
             elseif cmd == "joinchan" then
                 -- TEST canal custom : rejoint le canal "PIRequest".
                 JoinChannelByName("PIRequest")
@@ -111,4 +120,16 @@ chanTestFrame:SetScript("OnEvent", function(self, event, message, sender, _, _, 
     if chanName ~= "PIRequest" then return end
     local senderName = Ambiguate(sender, "short")
     print("|cff00ffff[PIReq-ChanTest]|r Reçu de " .. senderName .. " : " .. message)
+end)
+
+-- TEST : écoute les whispers reçus.
+local whisperTestFrame = CreateFrame("Frame")
+whisperTestFrame:RegisterEvent("CHAT_MSG_WHISPER")
+whisperTestFrame:SetScript("OnEvent", function(self, event, message, sender)
+    local ok1, senderName = pcall(Ambiguate, sender, "short")
+    local ok2, msg       = pcall(tostring, message)
+    print("|cff00ffff[PIReq-WhisperTest]|r Reçu de "
+        .. (ok1 and senderName or "<tainted>")
+        .. " : "
+        .. (ok2 and msg or "<tainted>"))
 end)
