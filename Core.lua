@@ -65,6 +65,19 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
                     SendChatMessage(".", "WHISPER", nil, target)
                     print("|cff00ffff[PIReq-WhisperTest]|r Whisper envoyé à " .. target .. ".")
                 end
+            elseif cmd == "makemacro" then
+                -- Crée (ou met à jour) un macro "PIReqTest" avec la commande canal custom.
+                local playerName = UnitName("player")
+                local body = "/PIRequest REQUEST:" .. playerName
+                local idx = GetMacroIndexByName("PIReqTest")
+                if idx and idx > 0 then
+                    EditMacro(idx, "PIReqTest", nil, body)
+                    print("|cff00ffff[PIReq-ChanTest]|r Macro 'PIReqTest' mis à jour.")
+                else
+                    CreateMacro("PIReqTest", "INV_MISC_QUESTIONMARK", body)
+                    print("|cff00ffff[PIReq-ChanTest]|r Macro 'PIReqTest' créé. Glisse-le sur ta barre d'action.")
+                end
+                print("|cff00ffff[PIReq-ChanTest]|r Contenu : " .. body)
             elseif cmd == "joinchan" then
                 -- TEST canal custom : rejoint le canal "PIRequest".
                 JoinChannelByName("PIRequest")
@@ -87,7 +100,7 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
                 PIReq.debugMode = not PIReq.debugMode
                 print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
             else
-                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | testdps | joinchan | chantest | status | debug")
+                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | testdps | joinchan | chantest | makemacro | status | debug")
             end
         end
 
