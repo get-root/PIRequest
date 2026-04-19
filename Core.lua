@@ -48,9 +48,14 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif cmd == "testdps" then
                 -- Envoie directement un yell "." sans vérifier le registre des prêtres.
                 -- Permet de tester la mécanique yell même sans prêtre dans le groupe.
-                SendChatMessage(".", "YELL")
-                PIReq.lastSendTime = GetTime()
-                print("|cff00ff00[PIRequest]|r Test DPS : yell envoyé.")
+                local now = GetTime()
+                if now - (PIReq.lastSendTime or 0) < 10 then
+                    print("|cffff6600[PIRequest]|r Test DPS : cooldown actif, attends " .. string.format("%.0f", 10 - (now - PIReq.lastSendTime)) .. "s.")
+                else
+                    SendChatMessage(".", "YELL")
+                    PIReq.lastSendTime = now
+                    print("|cff00ff00[PIRequest]|r Test DPS : yell envoyé.")
+                end
             elseif cmd == "debug" then
                 PIReq.debugMode = not PIReq.debugMode
                 print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
