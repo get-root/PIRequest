@@ -33,6 +33,12 @@ end
 -- Réception des messages addon.
 local commFrame = CreateFrame("Frame")
 commFrame:RegisterEvent("CHAT_MSG_ADDON")
+
+-- Appelée par Core.lua pour re-register event + prefix après CHALLENGE_MODE_START.
+function PIReq_ReregisterComm()
+    C_ChatInfo.RegisterAddonMessagePrefix(ADDON_NAME)
+    commFrame:RegisterEvent("CHAT_MSG_ADDON")
+end
 commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, sender)
     if PIReq.debugMode then
         print("[PIReq] ADDON MSG reçu: prefix=" .. tostring(prefix) .. " chan=" .. tostring(channel))
@@ -47,34 +53,33 @@ commFrame:SetScript("OnEvent", function(self, event, prefix, message, channel, s
         if PIReq.isPriest then return end
         local spec = (message == "HELLO:DISC") and "DISC" or "HOLY"
         PIReq.knownPriests[senderName] = { spec = spec, inGroup = true }
-
-    elseif message:sub(1, 8) == "REQUEST:" then
-        -- Côté prêtre : traite la requête (format "REQUEST:NomDuPrêtre").
-        local targetName = message:sub(9)
-        if PIReq.debugMode then print("[PIReq] REQUEST reçu de " .. senderName .. " pour " .. targetName) end
-
-        if not PIReq.isPriest then
-            if PIReq.debugMode then print("[PIReq] BLOQUÉ : isPriest=false") end
-            return
-        end
-
-        -- Vérifie que ce message nous est bien adressé.
-        local myName = Ambiguate(GetUnitName("player", true) or "", "short")
-        if targetName ~= myName then
-            if PIReq.debugMode then print("[PIReq] IGNORÉ : adressé à " .. targetName .. " (moi=" .. myName .. ")") end
-            return
-        end
-
-        -- Déduplication.
-        local now = GetTime()
-        local last = PIReq.requestCooldowns[senderName]
-        if last and (now - last) < DEDUP_WINDOW then
-            if PIReq.debugMode then print("[PIReq] BLOQUÉ : dédup (" .. string.format("%.1f", now - last) .. "s)") end
-            return
-        end
-        PIReq.requestCooldowns[senderName] = now
-
-        -- Déclenche le highlight.
-        PIReq_Highlight(senderName)
     end
+end)
+
+-- Réception des yells côté prêtre (CHAT_MSG_ADDON bloqué en M+ Midnight).
+local yellFrame = CreateFrame("Frame")
+yellFrame:RegisterEvent("CHAT_MSG_YELL")
+yellFrame:SetScript("OnEvent", function(self, event, message, sender)
+    if not PIReq.isPriest then return end
+    if message ~= "." then return end
+
+    local senderName = Ambiguate(sender, "short")
+    if PIReq.debugMode then print("[PIReq] YELL reçu de " .. senderName) end
+
+    -- Vérifie que l'expéditeur est bien dans le groupe.
+    if not PIReq_IsNameInGroup(senderName) then
+        if PIReq.debugMode then print("[PIReq] YELL ignoré : " .. senderName .. " pas dans le groupe") end
+        return
+    end
+
+    -- Déduplication.
+    local now = GetTime()
+    local last = PIReq.requestCooldowns[senderName]
+    if last and (now - last) < DEDUP_WINDOW then
+        if PIReq.debugMode then print("[PIReq] YELL bloqué : dédup (" .. string.format("%.1f", now - last) .. "s)") end
+        return
+    end
+    PIReq.requestCooldowns[senderName] = now
+
+    PIReq_Highlight(senderName)
 end)
