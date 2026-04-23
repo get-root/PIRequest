@@ -15,11 +15,14 @@ communication inter-joueurs.
 ## Approche technique : détection passive via UNIT_AURA
 
 Blizzard classe nativement les gros CDs offensifs (Combustion, Témérité, Dragonrage,
-Avatar…) avec `classification = "important"` dans les données d'aura.
+Avatar…) avec le filtre interne `HELPFUL|IMPORTANT`.
 
-L'addon écoute `UNIT_AURA` pour chaque membre du groupe. Quand une aura
-`isHelpful == true` et `classification == "important"` apparaît sur un coéquipier,
-il déclenche le highlight + notification côté prêtre.
+L'addon écoute `UNIT_AURA` pour chaque membre du groupe. Pour chaque aura ajoutée,
+il vérifie via `C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, instanceID, "HELPFUL|IMPORTANT")` :
+si cette fonction retourne `false`, l'aura correspond au filtre → alerte déclenchée.
+
+⚠️ `aura.classification` n'est **pas** un champ de `AuraData` — c'est un filtre de
+requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un champ direct.
 
 **Avantages :**
 - Fonctionne en M+ (UNIT_AURA non bloqué)
@@ -70,10 +73,14 @@ end
 
 ### Détection des auras IMPORTANT
 ```lua
--- Dans le handler UNIT_AURA, pour chaque aura ajoutée :
-if aura.isHelpful and aura.classification == "important" then
+-- Pour chaque aura ajoutée dans updateInfo.addedAuras :
+local filtered = C_UnitAuras.IsAuraFilteredOutByInstanceID(
+    unit, aura.auraInstanceID, "HELPFUL|IMPORTANT"
+)
+if filtered == false then
     PIReq_Highlight(playerName)
 end
+-- Si isFullUpdate == true (pas d'addedAuras) : scan via GetAuraDataByIndex
 ```
 
 ### Highlight (Highlighter.lua)
@@ -89,8 +96,9 @@ Récupérer en jeu avec : `/run print(GetBuildInfo())`
 ## Commandes slash
 ```
 /pirequest test      → déclenche une notification test avec son propre nom
+/pirequest scan      → liste les membres du groupe et leurs auras IMPORTANT actives
 /pirequest status    → affiche isPriest + spec courante
-/pirequest debug     → toggle mode debug (affiche les auras détectées)
+/pirequest debug     → toggle mode debug (affiche les auras détectées en temps réel)
 ```
 
 ---
