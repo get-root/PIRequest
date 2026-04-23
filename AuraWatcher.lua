@@ -1,11 +1,11 @@
 -- PIRequest — AuraWatcher.lua
 -- Côté prêtre : observe les auras IMPORTANT des coéquipiers via UNIT_AURA.
-print("|cff00ff00[PIRequest]|r AuraWatcher.lua chargé.")
 
 local DEDUP_WINDOW = 10  -- secondes entre deux alertes pour le même joueur
 
-local alertCooldowns = {}  -- [unitToken] = timestamp
-local watchFrames    = {}  -- [unitToken] = frame
+local alertCooldowns     = {}  -- [unitToken] = timestamp
+local watchFrames        = {}  -- [unitToken] = frame
+local knownImportantUnits = {} -- [unitToken] = true si l'unit avait déjà une aura IMPORTANT
 
 -- Scanne les auras HELPFUL|IMPORTANT actives sur un unit.
 -- Retourne true si au moins une est présente.
@@ -18,20 +18,27 @@ local function HasImportantAura(unit)
             local ok, name = pcall(tostring, auraData.name)
             print("[PIReq] IMPORTANT aura sur " .. unit .. " : " .. (ok and name or "<tainted>"))
         end
-        return true
+        i = i + 1
     end
-    return false
+    return i > 1
 end
 
 -- Vérifie si une aura ajoutée correspond au filtre HELPFUL|IMPORTANT.
 local function IsImportantAura(unit, aura)
-    if not aura.isHelpful then return false end
     if not aura.auraInstanceID then return false end
     -- IsAuraFilteredOutByInstanceID retourne false si l'aura CORRESPOND au filtre.
+    -- Pour les joueurs cross-realm, Blizzard renvoie une "secret value" (ni true ni false) :
+    -- on la traite comme un match plutôt que de rater l'alerte.
     local filtered = C_UnitAuras.IsAuraFilteredOutByInstanceID(
         unit, aura.auraInstanceID, "HELPFUL|IMPORTANT"
     )
-    return filtered == false
+    if filtered == false or issecretvalue(filtered) then return true end
+    -- Validation secondaire via C_Spell.IsSpellImportant (si spellId disponible).
+    if aura.spellId and C_Spell and C_Spell.IsSpellImportant then
+        local imp = C_Spell.IsSpellImportant(aura.spellId)
+        if imp == true or issecretvalue(imp) then return true end
+    end
+    return false
 end
 
 local function TryAlert(unit)
@@ -55,8 +62,12 @@ local function OnUnitAura(unit, updateInfo)
     if unit == "player" then return end
 
     if updateInfo and updateInfo.isFullUpdate then
-        -- Full update : pas d'addedAuras, on scanne directement.
-        if HasImportantAura(unit) then
+        -- Full update (zone transition, reload, unit apparaît à portée) :
+        -- on n'alerte que si l'unit passe d'un état sans aura IMPORTANT à avec.
+        local hasNow = HasImportantAura(unit)
+        local hadBefore = knownImportantUnits[unit]
+        knownImportantUnits[unit] = hasNow or nil
+        if hasNow and not hadBefore then
             TryAlert(unit)
         end
         return
@@ -71,6 +82,7 @@ local function OnUnitAura(unit, updateInfo)
                 print("[PIReq] IMPORTANT ajouté sur " .. unit
                     .. " : " .. (ok and name or "<tainted>"))
             end
+            knownImportantUnits[unit] = true
             TryAlert(unit)
             return  -- Une alerte par event suffit
         end
@@ -87,13 +99,23 @@ function PIReq_StartWatching()
         for i = 1, 4 do units[#units + 1] = "party" .. i end
     end
 
+    -- Baseline : unités déjà porteuses d'une aura IMPORTANT au moment du watch.
+    -- Utilisé pour éviter les faux positifs sur isFullUpdate (zone-in, reload).
     for _, token in ipairs(units) do
-        local f = CreateFrame("Frame")
-        f:RegisterUnitEvent("UNIT_AURA", token)
-        f:SetScript("OnEvent", function(self, event, unit, updateInfo)
-            OnUnitAura(unit, updateInfo)
-        end)
-        watchFrames[token] = f
+        if UnitExists(token) and HasImportantAura(token) then
+            knownImportantUnits[token] = true
+        end
+    end
+
+    for _, token in ipairs(units) do
+        if not watchFrames[token] then
+            local f = CreateFrame("Frame")
+            f:RegisterUnitEvent("UNIT_AURA", token)
+            f:SetScript("OnEvent", function(self, event, unit, updateInfo)
+                OnUnitAura(unit, updateInfo)
+            end)
+            watchFrames[token] = f
+        end
     end
 
     if PIReq.debugMode then
@@ -106,5 +128,6 @@ function PIReq_StopWatching()
         f:UnregisterAllEvents()
         watchFrames[token] = nil
     end
-    alertCooldowns = {}
+    alertCooldowns      = {}
+    knownImportantUnits = {}
 end

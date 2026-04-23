@@ -19,7 +19,10 @@ Avatar…) avec le filtre interne `HELPFUL|IMPORTANT`.
 
 L'addon écoute `UNIT_AURA` pour chaque membre du groupe. Pour chaque aura ajoutée,
 il vérifie via `C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, instanceID, "HELPFUL|IMPORTANT")` :
-si cette fonction retourne `false`, l'aura correspond au filtre → alerte déclenchée.
+- si cette fonction retourne `false` → l'aura correspond au filtre → alerte déclenchée.
+- si cette fonction retourne une **secret value** (cas cross-realm sur Midnight) → traité comme un match.
+
+Validation secondaire via `C_Spell.IsSpellImportant(spellId)` si le `spellId` est disponible.
 
 ⚠️ `aura.classification` n'est **pas** un champ de `AuraData` — c'est un filtre de
 requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un champ direct.
@@ -43,6 +46,7 @@ requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un ch
 - Seuls les prêtres healers (Holy/Disc) activent la détection.
 - Déduplication : une alerte pour le même joueur est ignorée pendant 10 secondes.
 - La liste des units surveillés est mise à jour à chaque `GROUP_ROSTER_UPDATE`.
+- Les alertes peuvent être désactivées à la volée via `/pirequest disable` sans /reload.
 
 ---
 
@@ -77,16 +81,28 @@ end
 local filtered = C_UnitAuras.IsAuraFilteredOutByInstanceID(
     unit, aura.auraInstanceID, "HELPFUL|IMPORTANT"
 )
-if filtered == false then
+-- filtered == false  → match direct
+-- issecretvalue(filtered) → match cross-realm (Midnight)
+if filtered == false or issecretvalue(filtered) then
     PIReq_Highlight(playerName)
 end
--- Si isFullUpdate == true (pas d'addedAuras) : scan via GetAuraDataByIndex
+
+-- Fallback : validation via C_Spell.IsSpellImportant
+if aura.spellId and C_Spell and C_Spell.IsSpellImportant then
+    local imp = C_Spell.IsSpellImportant(aura.spellId)
+    if imp == true or issecretvalue(imp) then PIReq_Highlight(playerName) end
+end
+
+-- Si isFullUpdate == true (pas d'addedAuras) : scan via GetAuraDataByIndex.
+-- N'alerte que si l'unité passe d'un état sans aura IMPORTANT à avec
+-- (évite les faux positifs sur zone-in / reload).
 ```
 
 ### Highlight (Highlighter.lua)
 - Bordure animée dorée sur le frame de raid du DPS
-- Pulse alpha 0.4 → 1.0, durée 15s
+- Pulse alpha 0.4 → 1.0, durée 15s, ticker 100ms
 - Notification : icône PI + nom du joueur, durée 5s, draggable
+- Frame de notification créé à `PLAYER_ENTERING_WORLD` (CreateFrame interdit en combat)
 
 ### Numéro d'interface TOC
 Récupérer en jeu avec : `/run print(GetBuildInfo())`
@@ -97,8 +113,11 @@ Récupérer en jeu avec : `/run print(GetBuildInfo())`
 ```
 /pirequest test      → déclenche une notification test avec son propre nom
 /pirequest scan      → liste les membres du groupe et leurs auras IMPORTANT actives
-/pirequest status    → affiche isPriest + spec courante
+/pirequest status    → affiche isPriest + spec courante + état enabled
 /pirequest debug     → toggle mode debug (affiche les auras détectées en temps réel)
+/pirequest toggle    → active/désactive les alertes à la volée
+/pirequest enable    → active les alertes
+/pirequest disable   → désactive les alertes
 ```
 
 ---
@@ -112,3 +131,16 @@ Toutes les approches par envoi de messages inter-joueurs ont été abandonnées 
 - Canaux custom : cross-realm impossible
 
 La solution UNIT_AURA est la seule approche passive qui fonctionne en M+.
+
+---
+
+## Notes de compatibilité
+
+### Patch 12.0.5+
+`UNIT_SPELLCAST_SUCCEEDED` ne fire plus pour les autres joueurs depuis 12.0.5.
+PIRequest n'est **pas affecté** car il repose uniquement sur `UNIT_AURA`.
+
+### Secret values (Midnight)
+`IsAuraFilteredOutByInstanceID` peut retourner une valeur opaque (secret value) pour
+les joueurs cross-realm. L'addon traite ces valeurs comme des matches valides via
+`issecretvalue()` plutôt que de les ignorer silencieusement.

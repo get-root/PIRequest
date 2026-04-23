@@ -1,18 +1,18 @@
 # PIRequest — WoW Addon
 
-World of Warcraft addon allowing a DPS to signal a healer Priest that they want a **Power Infusion**.
+World of Warcraft addon for Holy/Discipline priests that automatically detects when a DPS teammate activates a major offensive cooldown — the ideal moment to cast **Power Infusion**.
 
-> **Context:** Since Midnight, Blizzard introduced "secret values" that break cooldown tracking addons like OmniCD. This addon works around the problem via an explicit communication system between players.
+> **Context:** Since Midnight, Blizzard introduced "secret values" that break cooldown tracking addons like OmniCD. PIRequest works around this by passively observing teammate auras via `UNIT_AURA`, with no inter-player communication required.
 
 ---
 
 ## How it works
 
-- The **Priest** broadcasts their presence (`HELLO:HOLY` or `HELLO:DISC`) to the group on login and roster changes.
-- The **DPS** clicks a macro that whispers a `REQUEST` to the detected priest.
-- The **Priest** sees a pulsing golden border on the DPS's raid frame for 15 seconds, and a 5-second notification aura (PI icon + player name).
+1. The **Priest** installs the addon — no configuration needed.
+2. The addon automatically detects the priest's spec (Holy or Disc) and starts watching group members.
+3. When a DPS activates a major offensive cooldown (Combustion, Recklessness, Dragonrage, Avatar…), a golden pulsing border appears on their raid frame for 15 seconds, and a 5-second notification aura (PI icon + player name) pops up.
 
-Both players must have the addon installed.
+Neither the priest nor the DPS needs to do anything — detection is fully passive.
 
 ---
 
@@ -24,44 +24,34 @@ Both players must have the addon installed.
 
 ---
 
-## Usage
-
-### DPS Macro
+## Commands
 
 ```
-/run PIReq_SendRequest()
-/cast [Your DPS Spell]
-```
-
-### Priest Commands
-
-```
-/pirequest test      -- trigger a test notification with your own name
-/pirequest status    -- show isPriest flag and current spec number
-```
-
-### Debug Commands
-
-```
-/run PIReq_SendRequest()               -- test sending a request (DPS)
-/run print(PIReq.knownPriests)         -- show known priests registry
-/run print(GetSpellCooldown(10060))    -- check PI cooldown
+/pirequest test      — trigger a test notification with your own name
+/pirequest scan      — list group members and their active IMPORTANT auras
+/pirequest status    — show isPriest, current spec, and enabled state
+/pirequest toggle    — enable/disable alerts on the fly (no /reload needed)
+/pirequest enable    — enable alerts
+/pirequest disable   — disable alerts
+/pirequest debug     — toggle debug mode (prints detected auras in real time)
 ```
 
 ---
 
 ## Compatibility
 
-- **WoW Version:** 12.0.1 (Interface 120001)
+- **WoW Version:** Midnight (Interface 120001)
 - **Group types:** Mythic+ and Raid
-- **Multiple priests:** Each DPS whispers the correct priest directly
+- **Cross-realm:** works — no network communication, purely local aura detection
+- **Patch 12.0.5+:** compatible — does not rely on `UNIT_SPELLCAST_SUCCEEDED`
 
 ---
 
-## Roadmap
+## Technical approach
 
-- **V1 (current):** Dynamic priest discovery, request sending, raid frame highlight, notification aura, deduplication
-- **V2 (planned):** `ACK` reply if PI available, `COOLDOWN:XX` reply if on cooldown
+Detection uses `C_UnitAuras.IsAuraFilteredOutByInstanceID` with the `HELPFUL|IMPORTANT` filter — the same filter Blizzard uses internally to classify major offensive cooldowns. No spell ID list to maintain.
+
+For cross-realm players on Midnight, Blizzard returns opaque "secret values" instead of `true`/`false`. PIRequest handles this via `issecretvalue()` so cross-realm DPS cooldowns are never silently missed. A secondary validation via `C_Spell.IsSpellImportant` provides an additional fallback.
 
 ---
 

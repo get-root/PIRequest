@@ -110,18 +110,29 @@ local function FindUnitToken(playerName)
     for i = 1, 40 do
         local token = "raid" .. i
         if UnitExists(token) then
-            local name = Ambiguate(GetUnitName(token, true), "short")
+            local name = Ambiguate(GetUnitName(token, true) or "", "short")
             if name == playerName then return token end
         end
     end
     for i = 1, 4 do
         local token = "party" .. i
         if UnitExists(token) then
-            local name = Ambiguate(GetUnitName(token, true), "short")
+            local name = Ambiguate(GetUnitName(token, true) or "", "short")
             if name == playerName then return token end
         end
     end
     return nil
+end
+
+local MAX_SCAN_DEPTH = 8
+
+local function ScanChildrenForUnit(parent, unitToken, depth)
+    if depth <= 0 then return nil end
+    for _, child in ipairs({ parent:GetChildren() }) do
+        if child.unit and child.unit == unitToken then return child end
+        local found = ScanChildrenForUnit(child, unitToken, depth - 1)
+        if found then return found end
+    end
 end
 
 -- Trouve le frame de raid Blizzard associé à un unit token.
@@ -131,25 +142,11 @@ local function FindRaidFrame(unitToken)
         if f and f.unit == unitToken then return f end
     end
     if CompactPartyFrame then
-        local function ScanChildren(parent)
-            for _, child in ipairs({ parent:GetChildren() }) do
-                if child.unit and child.unit == unitToken then return child end
-                local found = ScanChildren(child)
-                if found then return found end
-            end
-        end
-        local found = ScanChildren(CompactPartyFrame)
+        local found = ScanChildrenForUnit(CompactPartyFrame, unitToken, MAX_SCAN_DEPTH)
         if found then return found end
     end
     if CompactRaidFrameContainer then
-        local function ScanChildren(parent)
-            for _, child in ipairs({ parent:GetChildren() }) do
-                if child.unit and child.unit == unitToken then return child end
-                local found = ScanChildren(child)
-                if found then return found end
-            end
-        end
-        local found = ScanChildren(CompactRaidFrameContainer)
+        local found = ScanChildrenForUnit(CompactRaidFrameContainer, unitToken, MAX_SCAN_DEPTH)
         if found then return found end
     end
     return nil
@@ -211,7 +208,7 @@ function PIReq_Highlight(playerName)
     overlay:Show()
 
     local startTime = GetTime()
-    local ticker = C_Timer.NewTicker(0.05, function()
+    local ticker = C_Timer.NewTicker(0.1, function()
         local elapsed = GetTime() - startTime
         if elapsed >= HIGHLIGHT_DURATION then
             RemoveHighlight(unitToken)
@@ -238,5 +235,11 @@ function PIReq_ClearHighlight(playerName)
     if unitToken then RemoveHighlight(unitToken) end
 end
 
--- Pré-création du frame de notification hors combat (CreateFrame interdit en combat).
-GetNotifFrame()
+-- Pré-création du frame de notification à PLAYER_ENTERING_WORLD.
+-- CreateFrame est restreint en combat ; on le crée avant toute entrée en instance.
+local _initFrame = CreateFrame("Frame")
+_initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+_initFrame:SetScript("OnEvent", function(self)
+    self:UnregisterAllEvents()
+    GetNotifFrame()
+end)
