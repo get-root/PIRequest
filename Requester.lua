@@ -1,3 +1,0 @@
--- PIRequest — Requester.lua
--- Fichier retiré du TOC. Conservé pour l'historique git.
--- Approche DPS → macro REQUEST abandonnée (communication bloquée en M+ Midnight).

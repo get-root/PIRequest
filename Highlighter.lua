@@ -76,7 +76,7 @@ local function GetNotifFrame()
     subText:SetPoint("RIGHT",   f,        "RIGHT",     -10, 0)
     subText:SetJustifyH("LEFT")
     subText:SetTextColor(1, 0.84, 0, 1)
-    subText:SetText("veut une Power Infusion !")
+    subText:SetText("CD offensif lancé — Power Infusion !")
 
     f:Hide()
     notifFrame = f
@@ -89,6 +89,10 @@ local function ShowNotification(playerName)
         f.nameText:SetText(playerName)
         f:SetAlpha(1)
         f:Show()
+
+        if PIReq.soundEnabled then
+            PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
+        end
 
         if notifTimer then notifTimer:Cancel() end
         notifTimer = C_Timer.NewTimer(NOTIF_DURATION, function()

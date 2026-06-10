@@ -1,3 +1,0 @@
--- PIRequest — Comm.lua
--- Fichier retiré du TOC. Conservé pour l'historique git.
--- Approche par SendAddonMessage/CHAT_MSG_ADDON abandonnée (bloquée en M+ Midnight).

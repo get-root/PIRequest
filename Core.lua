@@ -2,8 +2,9 @@
 -- Initialisation, détection du rôle, frame d'événements principal.
 
 PIReq = {}
-PIReq.isPriest  = false
-PIReq.enabled   = true
+PIReq.isPriest     = false
+PIReq.enabled      = true
+PIReq.soundEnabled = true
 
 local ADDON_NAME = "PIRequest"
 
@@ -47,22 +48,20 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
                     .. "  spec=" .. tostring(GetSpecialization())
                     .. "  enabled=" .. tostring(PIReq.enabled))
             elseif cmd == "scan" then
-                -- Scanne manuellement les membres du groupe pour auras IMPORTANT.
+                -- Compte les auras par catégorie pour chaque membre du groupe.
+                -- "offensif" = IMPORTANT − (BIG_DEFENSIVE ∪ EXTERNAL_DEFENSIVE),
+                -- c'est ce qui déclenche l'alerte.
                 local found = false
                 local maxMembers = IsInRaid() and 40 or 4
                 for i = 1, maxMembers do
                     local token = IsInRaid() and ("raid" .. i) or ("party" .. i)
-                    if UnitExists(token) then
+                    if UnitExists(token) and not UnitIsUnit(token, "player") then
                         local name = Ambiguate(GetUnitName(token, true) or "", "short")
-                        print("|cff00ff00[PIRequest]|r scan " .. token .. " = " .. name)
-                        local j = 1
-                        while true do
-                            local auraData = C_UnitAuras.GetAuraDataByIndex(token, j, "HELPFUL|IMPORTANT")
-                            if not auraData then break end
-                            local okN, aName = pcall(tostring, auraData.name)
-                            print("  → IMPORTANT : " .. (okN and aName or "<tainted>"))
-                            j = j + 1
-                        end
+                        local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(token) or "?"
+                        local nImp, nBigDef, nExtDef, nOff = PIReq_ScanUnit(token)
+                        print(string.format(
+                            "|cff00ff00[PIRequest]|r %s = %s (%s) : important=%d  bigDef=%d  extDef=%d  → |cffffd700offensif=%d|r",
+                            token, name, role, nImp, nBigDef, nExtDef, nOff))
                         found = true
                     end
                 end
@@ -87,8 +86,11 @@ coreFrame:SetScript("OnEvent", function(self, event, arg1)
             elseif cmd == "debug" then
                 PIReq.debugMode = not PIReq.debugMode
                 print("|cff00ff00[PIRequest]|r Debug " .. (PIReq.debugMode and "ON" or "OFF"))
+            elseif cmd == "sound" then
+                PIReq.soundEnabled = not PIReq.soundEnabled
+                print("|cff00ff00[PIRequest]|r Son " .. (PIReq.soundEnabled and "ON" or "OFF"))
             else
-                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | scan | status | debug | toggle | enable | disable")
+                print("|cff00ff00[PIRequest]|r Commandes : /pirequest test | scan | status | debug | sound | toggle | enable | disable")
             end
         end
 

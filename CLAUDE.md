@@ -2,35 +2,73 @@
 
 ## Objectif
 Addon World of Warcraft permettant à un prêtre heal (Holy/Discipline) de savoir
-automatiquement quand un coéquipier DPS active un gros CD offensif — le moment
-idéal pour caster **Power Infusion (Infusion de Puissance)**.
+automatiquement quand un coéquipier DPS active un gros CD offensif ou une potion
+de burst — le moment idéal pour caster **Power Infusion (Infusion de Puissance)**.
+Les CDs **défensifs** ne déclenchent pas d'alerte.
 
-Contexte : depuis Midnight, Blizzard a introduit des "valeurs secrètes" qui cassent
-les addons de tracking de cooldowns comme OmniCD. Cet addon contourne le problème
-en observant passivement les auras des coéquipiers via `UNIT_AURA`, sans aucune
-communication inter-joueurs.
+Contexte : depuis Midnight (12.0), les "secret values" cachent le contenu des
+auras des autres joueurs en combat / M+ / boss / PvP. Cet addon contourne le
+problème en n'exploitant que les requêtes filtrées côté serveur, sans jamais
+lire le contenu des auras et sans aucune communication inter-joueurs.
 
 ---
 
-## Approche technique : détection passive via UNIT_AURA
+## Approche technique : ensembles d'auraInstanceID via filtres serveur
 
-Blizzard classe nativement les gros CDs offensifs (Combustion, Témérité, Dragonrage,
-Avatar…) avec le filtre interne `HELPFUL|IMPORTANT`.
+En 12.0.5, le contenu des auras (spellId, nom…) des autres joueurs est secret
+dès que : une clé M+ est lancée, un combat de boss est en cours, un match PvP
+est actif, ou le joueur est en combat. **Mais** les requêtes filtrées
+`C_UnitAuras.GetUnitAuras(unit, filtre)` sont évaluées côté serveur et
+retournent une liste exploitable : le nombre d'éléments et les
+`auraInstanceID` ne sont pas secrets.
 
-L'addon écoute `UNIT_AURA` pour chaque membre du groupe. Pour chaque aura ajoutée,
-il vérifie via `C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, instanceID, "HELPFUL|IMPORTANT")` :
-- si cette fonction retourne `false` → l'aura correspond au filtre → alerte déclenchée.
-- si cette fonction retourne une **secret value** (cas cross-realm sur Midnight) → traité comme un match.
+Filtres utilisés (12.0.1+, mêmes que MiniCC) :
+- `HELPFUL|IMPORTANT` — auras passant `C_Spell.IsSpellImportant()` (gros CDs, offensifs ET défensifs)
+- `HELPFUL|BIG_DEFENSIVE` — gros défensifs personnels
+- `HELPFUL|EXTERNAL_DEFENSIVE` — défensifs externes (Pain Suppression, etc.)
 
-Validation secondaire via `C_Spell.IsSpellImportant(spellId)` si le `spellId` est disponible.
+**Détection offensive = IMPORTANT − (BIG_DEFENSIVE ∪ EXTERNAL_DEFENSIVE)**,
+par soustraction d'ensembles d'`auraInstanceID`. À chaque `UNIT_AURA`, on
+reconstruit l'ensemble offensif du unit et on alerte si un nouvel ID apparaît.
 
-⚠️ `aura.classification` n'est **pas** un champ de `AuraData` — c'est un filtre de
-requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un champ direct.
+MiniCC (3.25.0) utilise exactement ces filtres avec un set `seen` pour
+dédupliquer défensifs/importants ; nous inversons la logique pour ne garder
+que l'offensif.
+
+### Potions de burst
+Détectées via `updateInfo.addedAuras` quand le `spellId` est lisible (hors
+conditions secrètes — couvre le pre-pot avant le pull). IDs Midnight résolus
+via wago.tools (`ItemXItemEffect` → `ItemEffect.SpellID`) :
+- 1236616 Light's Potential (item 241308)
+- 1236994 Potion of Recklessness (item 241288)
+- 1236998 Draught of Rampant Abandon (item 241292)
+- 1238443 Potion of Zealotry (item 241296)
+
+En combat, le spellId est secret : la potion n'est alors détectée que si
+Blizzard la classe IMPORTANT (vérifiable in-game avec `/pirequest scan`).
+
+### Pièges connus (NE PAS revenir en arrière)
+- ⚠️ `C_UnitAuras.IsAuraFilteredOutByInstanceID` retourne des **secret values
+  en combat pour tout le monde** (pas seulement cross-realm). Traiter
+  `issecretvalue() == match` ⇒ faux positifs massifs (n'importe quel buff
+  alerte). C'est le bug qui a motivé la réécriture v2.
+- ⚠️ `aura.classification` n'est pas un champ d'`AuraData`.
+- ⚠️ Les `auraInstanceID` sont **re-randomisés** à l'entrée en M+ / boss /
+  PvP : l'addon rebase ses ensembles sans alerter pendant 3 s sur
+  `PLAYER_ENTERING_WORLD`, `ENCOUNTER_START`, `CHALLENGE_MODE_START`,
+  `PVP_MATCH_ACTIVE`.
+- ⚠️ `UNIT_SPELLCAST_SUCCEEDED` ne fournit plus de spellId exploitable pour
+  les autres joueurs en 12.0.5 (secret) ; il ne fire de façon fiable que pour
+  `"player"`. Inutilisable pour détecter les CDs des coéquipiers.
+- Garde anti-données corrompues (unités hors de portée, cf. MiniCC) : quand le
+  spellId est lisible, revalider avec `C_Spell.IsSpellImportant` /
+  `C_UnitAuras.AuraIsBigDefensive` — n'écarter que sur un `false` certain,
+  jamais sur une secret value.
 
 **Avantages :**
-- Fonctionne en M+ (UNIT_AURA non bloqué)
+- Fonctionne en M+ et en combat (filtres serveur non bloqués)
 - Cross-realm (pas de communication réseau)
-- Pas de liste de spell IDs à maintenir
+- Pas de liste de spell IDs de classes à maintenir (seulement les potions)
 - Aucune action requise côté DPS
 
 ---
@@ -38,15 +76,18 @@ requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un ch
 ## Spécifications fonctionnelles
 
 ### Rôles
-- **Prêtre** : Holy ou Discipline. Observe les auras, affiche le highlight.
+- **Prêtre** : Holy ou Discipline. Observe les auras, affiche le highlight + son.
 - **DPS** : Ne fait rien de spécial — l'addon détecte ses CDs automatiquement.
-- Les deux joueurs doivent avoir l'addon installé.
+- Seul le prêtre a besoin de l'addon.
 
 ### Règles métier
 - Seuls les prêtres healers (Holy/Disc) activent la détection.
-- Déduplication : une alerte pour le même joueur est ignorée pendant 10 secondes.
-- La liste des units surveillés est mise à jour à chaque `GROUP_ROSTER_UPDATE`.
-- Les alertes peuvent être désactivées à la volée via `/pirequest disable` sans /reload.
+- Alerte uniquement pour les DPS : `UnitGroupRolesAssigned` ≠ TANK/HEALER
+  (rôle inconnu = alerte quand même).
+- Déduplication : une alerte pour le même joueur est ignorée pendant 10 s.
+- Pas d'alerte pendant 3 s après un rebase (re-randomisation des IDs).
+- La liste des units surveillés est reconstruite à chaque `GROUP_ROSTER_UPDATE`.
+- Les alertes peuvent être désactivées à la volée via `/pirequest disable`.
 
 ---
 
@@ -55,10 +96,10 @@ requête. La détection passe par `IsAuraFilteredOutByInstanceID`, pas par un ch
 ```
 PIRequest/
 ├── CLAUDE.md           ← ce fichier
-├── PIRequest.toc       ← déclaration de l'addon
-├── Core.lua            ← init, détection du rôle (prêtre vs DPS), slash commands
-├── AuraWatcher.lua     ← UNIT_AURA watcher, déclenchement des alertes
-└── Highlighter.lua     ← highlight barre de vie + notification aura
+├── PIRequest.toc       ← déclaration de l'addon (Interface 120005)
+├── Core.lua            ← init, détection du rôle, slash commands
+├── AuraWatcher.lua     ← ensembles offensifs par unit, alertes, potions
+└── Highlighter.lua     ← highlight barre de vie + notification + son
 ```
 
 ---
@@ -75,33 +116,27 @@ local function IsPriestHealer()
 end
 ```
 
-### Détection des auras IMPORTANT
+### Cœur de la détection (AuraWatcher.lua)
 ```lua
--- Pour chaque aura ajoutée dans updateInfo.addedAuras :
-local filtered = C_UnitAuras.IsAuraFilteredOutByInstanceID(
-    unit, aura.auraInstanceID, "HELPFUL|IMPORTANT"
-)
--- filtered == false  → match direct
--- issecretvalue(filtered) → match cross-realm (Midnight)
-if filtered == false or issecretvalue(filtered) then
-    PIReq_Highlight(playerName)
+-- À chaque UNIT_AURA sur un unit surveillé :
+local defensive = {}  -- auraInstanceID matchant un filtre défensif
+for _, filter in ipairs({ "HELPFUL|BIG_DEFENSIVE", "HELPFUL|EXTERNAL_DEFENSIVE" }) do
+    for _, aura in ipairs(C_UnitAuras.GetUnitAuras(unit, filter)) do
+        defensive[aura.auraInstanceID] = true
+    end
 end
-
--- Fallback : validation via C_Spell.IsSpellImportant
-if aura.spellId and C_Spell and C_Spell.IsSpellImportant then
-    local imp = C_Spell.IsSpellImportant(aura.spellId)
-    if imp == true or issecretvalue(imp) then PIReq_Highlight(playerName) end
+local set = {}
+for _, aura in ipairs(C_UnitAuras.GetUnitAuras(unit, "HELPFUL|IMPORTANT")) do
+    if not defensive[aura.auraInstanceID] then set[aura.auraInstanceID] = true end
 end
-
--- Si isFullUpdate == true (pas d'addedAuras) : scan via GetAuraDataByIndex.
--- N'alerte que si l'unité passe d'un état sans aura IMPORTANT à avec
--- (évite les faux positifs sur zone-in / reload).
+-- comparer à l'ensemble précédent : nouvel ID ⇒ TryAlert(unit)
 ```
 
 ### Highlight (Highlighter.lua)
 - Bordure animée dorée sur le frame de raid du DPS
 - Pulse alpha 0.4 → 1.0, durée 15s, ticker 100ms
 - Notification : icône PI + nom du joueur, durée 5s, draggable
+- Son `SOUNDKIT.RAID_WARNING` (désactivable via `/pirequest sound`)
 - Frame de notification créé à `PLAYER_ENTERING_WORLD` (CreateFrame interdit en combat)
 
 ### Numéro d'interface TOC
@@ -112,9 +147,10 @@ Récupérer en jeu avec : `/run print(GetBuildInfo())`
 ## Commandes slash
 ```
 /pirequest test      → déclenche une notification test avec son propre nom
-/pirequest scan      → liste les membres du groupe et leurs auras IMPORTANT actives
+/pirequest scan      → compte par membre : important / bigDef / extDef / offensif
 /pirequest status    → affiche isPriest + spec courante + état enabled
-/pirequest debug     → toggle mode debug (affiche les auras détectées en temps réel)
+/pirequest debug     → toggle mode debug (trace les détections en temps réel)
+/pirequest sound     → toggle le son d'alerte
 /pirequest toggle    → active/désactive les alertes à la volée
 /pirequest enable    → active les alertes
 /pirequest disable   → désactive les alertes
@@ -130,17 +166,8 @@ Toutes les approches par envoi de messages inter-joueurs ont été abandonnées 
 - `SendChatMessage` (YELL, WHISPER, CHANNEL) : bloqué ou message/sender tainté
 - Canaux custom : cross-realm impossible
 
-La solution UNIT_AURA est la seule approche passive qui fonctionne en M+.
+L'approche v1 (`IsAuraFilteredOutByInstanceID` par aura ajoutée + secret value
+= match) a été abandonnée : faux positifs massifs en combat (voir Pièges).
 
----
-
-## Notes de compatibilité
-
-### Patch 12.0.5+
-`UNIT_SPELLCAST_SUCCEEDED` ne fire plus pour les autres joueurs depuis 12.0.5.
-PIRequest n'est **pas affecté** car il repose uniquement sur `UNIT_AURA`.
-
-### Secret values (Midnight)
-`IsAuraFilteredOutByInstanceID` peut retourner une valeur opaque (secret value) pour
-les joueurs cross-realm. L'addon traite ces valeurs comme des matches valides via
-`issecretvalue()` plutôt que de les ignorer silencieusement.
+La soustraction d'ensembles via filtres serveur est la seule approche passive
+fiable en M+.
