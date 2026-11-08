@@ -29,17 +29,34 @@ local pendingSync   = false
 local retries       = 0
 local errShown      = false
 
+-- Journal du moteur (affiché par /pirequest scan et /pirequest resync).
+local logLines, verbose = {}, false
+local function Log(msg)
+    logLines[#logLines + 1] = date("%H:%M:%S ") .. msg
+    if #logLines > 30 then table.remove(logLines, 1) end
+    if verbose or PIReq.debugMode then PIReq.Print("[moteur] " .. msg) end
+end
+
 local function Err(msg)
-    if PIReq.debugMode or not errShown then
+    Log("ERREUR " .. msg)
+    if not errShown then
         errShown = true
         PIReq.Print("|cffff6600" .. msg .. "|r")
     end
 end
 
+function PIReq_EngineVerbose(v) verbose = v end
+
 -- Diagnostic /pirequest scan : état réel des containers.
 function PIReq_EngineDebug()
     local lines = {}
-    if not tracker then return { "tracker non créé (aucune unité/aucun sort, ou option désactivée)" } end
+    if not tracker then
+        lines[#lines + 1] = "tracker non créé (aucune unité/aucun sort, ou option désactivée)"
+        lines[#lines + 1] = string.format("contexte : PI en recharge=%s pendingSync=%s combat=%s option tracker=%s",
+            tostring(PIReq.AlertsMuted()), tostring(pendingSync), tostring(InCombatLockdown()), tostring(PIReq.DB.tracker))
+        for i = math.max(1, #logLines - 9), #logLines do lines[#lines + 1] = logLines[i] end
+        return lines
+    end
     local ok, shown = pcall(tracker.IsShown, tracker)
     lines[#lines + 1] = string.format("tracker : shown=%s alpha=%s", tostring(ok and shown), tostring(tracker:GetEffectiveAlpha()))
     for i, c in ipairs(active) do
@@ -51,6 +68,10 @@ function PIReq_EngineDebug()
             tostring(o1 and u), tostring(o2 and sh), tostring(o3 and w), tostring(o4 and h))
     end
     if #active == 0 then lines[#lines + 1] = "aucun container actif" end
+    lines[#lines + 1] = string.format("contexte : PI en recharge=%s pendingSync=%s combat=%s option tracker=%s",
+        tostring(PIReq.AlertsMuted()), tostring(pendingSync), tostring(InCombatLockdown()), tostring(PIReq.DB.tracker))
+    lines[#lines + 1] = "-- journal moteur (derniers) --"
+    for i = math.max(1, #logLines - 9), #logLines do lines[#lines + 1] = logLines[i] end
     return lines
 end
 
@@ -260,6 +281,8 @@ end
 
 local function SyncContainers(units)
     ParkAll()
+    Log(string.format("containers : unités=%d tracker=%s sorts=%s",
+        #units, tostring(PIReq.DB.tracker), tostring(next(PIReq.spellSet) ~= nil)))
     if not PIReq.DB.tracker or #units == 0 or next(PIReq.spellSet) == nil then
         return
     end
@@ -274,29 +297,41 @@ local function SyncContainers(units)
             if ok then
                 c = res
                 pool[key] = c
+                Log("container créé pour " .. unit .. " (" .. name .. ")")
             else
-                Err("création du container impossible : " .. tostring(res))
+                Err("création du container impossible (" .. unit .. ") : " .. tostring(res))
             end
         end
         if c then
-            c:ClearAllPoints()
-            c:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -(i - 1) * (ICON + GAP))
+            pcall(c.ClearAllPoints, c)
+            pcall(c.SetPoint, c, "TOPLEFT", f, "TOPLEFT", 0, -(i - 1) * (ICON + GAP))
+            pcall(c.Show, c)
             -- Filtre à jour (la sélection de sorts a pu changer).
             if c.SetAuraGroupCandidateFilters then
-                pcall(c.SetAuraGroupCandidateFilters, c, GROUP_KEY, { includeSpellIDs = IncludeSet() })
+                local okF, eF = pcall(c.SetAuraGroupCandidateFilters, c, GROUP_KEY, { includeSpellIDs = IncludeSet() })
+                if not okF then Err("SetAuraGroupCandidateFilters : " .. tostring(eF)) end
             end
-            -- Même séquence que le moteur de référence (AuraKit.FinishContainer) :
-            -- activer, lier l'unité, PUIS demander un rafraîchissement complet.
-            -- Sans UpdateAllAuras le container reste vide.
-            if c.SetEnabled then pcall(c.SetEnabled, c, true) end
-            c:Show()
-            local ok, err = pcall(c.SetUnit, c, unit)
-            if ok and c.UpdateAllAuras then ok, err = pcall(c.UpdateAllAuras, c) end
-            if ok then
-                active[#active + 1] = c
-            else
-                Err("SetUnit(" .. unit .. ") refusé : " .. tostring(err))
+            -- Un AuraContainer n'écoute UNIT_AURA que s'il est VISIBLE ET ACTIVÉ
+            -- (IsVisible() and IsEnabled()) ; SetEnabled/SetUnit relancent eux-mêmes
+            -- le rafraîchissement. UpdateAllAuras n'est qu'un filet : son échec
+            -- ne doit pas écarter le container.
+            if c.SetEnabled then
+                local okE, eE = pcall(c.SetEnabled, c, true)
+                if not okE then Err("SetEnabled : " .. tostring(eE)) end
             end
+            local okS, eS = pcall(c.SetUnit, c, unit)
+            if not okS then Err("SetUnit(" .. unit .. ") : " .. tostring(eS)) end
+            if okS and c.UpdateAllAuras then
+                local okU, eU = pcall(c.UpdateAllAuras, c)
+                if not okU then Log("UpdateAllAuras (non bloquant) : " .. tostring(eU)) end
+            end
+            if okS then active[#active + 1] = c end
+
+            local o1, en  = pcall(c.IsEnabled, c)
+            local o2, vis = pcall(c.IsVisible, c)
+            local o3, u   = pcall(c.GetUnit, c)
+            Log(string.format("%s : enabled=%s visible=%s unit=%s", unit,
+                tostring(o1 and en), tostring(o2 and vis), tostring(o3 and u)))
         end
     end
     f:SetHeight(math.max(1, math.min(#units, MAX_ROWS)) * (ICON + GAP))
@@ -308,6 +343,7 @@ end
 
 function PIReq_EngineSync()
     if PIReq.AlertsMuted() then
+        Log("sync ignoré : PI en recharge (alertes coupées)")
         -- PI en recharge : on retire sons et icônes même en combat (pas de création).
         ClearSounds()
         ParkAll()
@@ -315,13 +351,17 @@ function PIReq_EngineSync()
         return
     end
     if InCombatLockdown() then
+        Log("sync reporté : en combat")
         pendingSync = true -- retenté à PLAYER_REGEN_ENABLED
         return
     end
     pendingSync = false
     local units = PIReq.ActiveUnits()
+    Log(string.format("sync : unités=%d combat=%s secret=%s", #units,
+        tostring(InCombatLockdown()), tostring(PIReq.IsRestricted())))
     local soundsOk = RegisterSounds(units)
-    SyncContainers(units)
+    local okC, eC = pcall(SyncContainers, units)
+    if not okC then Err("SyncContainers : " .. tostring(eC)) end
     if not soundsOk then
         pendingSync = true
         -- Nouvel essai temporisé (3 max) sans attendre la fin d'un combat.

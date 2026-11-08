@@ -335,6 +335,13 @@ local function HandleSlash(msg)
             end
         end
 
+    elseif cmd == "resync" then
+        -- Relance la synchro moteur en affichant chaque étape (diagnostic).
+        PIReq_EngineVerbose(true)
+        PIReq.Refresh()
+        PIReq_EngineVerbose(false)
+        for _, line in ipairs(PIReq_EngineDebug()) do print_("  " .. line) end
+
     elseif cmd == "secrecy" then
         -- Pour chaque CD actif : l'aura est-elle secrète ? (détermine ce qui est détectable en combat)
         local names = { [0] = "jamais secrète", [1] = "toujours secrète", [2] = "secrète selon contexte" }
@@ -394,7 +401,7 @@ local function HandleSlash(msg)
         PIReq.Refresh()
 
     else
-        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | tracker | sound | toggle | enable | disable | debug")
+        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | resync | tracker | sound | toggle | enable | disable | debug")
     end
 end
 
