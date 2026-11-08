@@ -1,13 +1,20 @@
 -- PIRequest — Data.lua
 -- Liste des CDs offensifs (et potions) proposés dans les options.
 --
--- id       : spellId de l'AURA (le buff qui apparaît sur le joueur)
--- alts     : autres spellIds de la même aura (talent, version spé…)
--- default  : false = décoché par défaut (CD mineur / court)
+-- Construite à partir de la base du jeu (export wago.tools 2026-11-08, tables
+-- SpellName / SpellCooldowns / Spell) : seuls sont retenus des buffs OFFENSIFS
+-- appliqués au joueur dont la description a été vérifiée. Les noms et recharges
+-- en commentaire viennent de cette base.
 --
--- ⚠️ Liste à valider en jeu (patch 12.1.x) : un ID inexistant ne casse rien
--- (il ne matche jamais). Tout ID manquant peut être ajouté depuis les
--- options ("ID personnalisé") ou via /pirequest add <spellId>.
+-- id       : spellId de l'AURA (le buff qui apparaît sur le joueur)
+-- alts     : autres spellIds de la même aura (talent, variante de spé…)
+-- priority : true = recharge >= 2 min dans la base (★ en tête de liste ; seuls
+--            actifs avec « prioritaires uniquement »). Recharge = la plus longue
+--            entre `id` et `alts` ; "?" = non trouvée → pas de ★ (à ajuster).
+-- default  : false = décoché par défaut (CD mineur / court / niche)
+--
+-- ⚠️ Les recharges sont celles du sort de base, hors talents. Un ID manquant
+-- peut être ajouté depuis les options ou via /pirequest add <spellId>.
 
 PIReq = PIReq or {}
 
@@ -18,54 +25,57 @@ PIReq.CLASS_ORDER = {
 }
 
 PIReq.SPELLS = {
-    -- Death Knight
-    { id = 51271,   class = "DEATHKNIGHT" },                 -- Pillar of Frost
-    { id = 47568,   class = "DEATHKNIGHT" },                 -- Empower Rune Weapon
-    { id = 207289,  class = "DEATHKNIGHT" },                 -- Unholy Assault
-    -- Demon Hunter
-    { id = 162264,  class = "DEMONHUNTER", alts = { 191427 } }, -- Metamorphosis (Havoc)
+    -- Deathknight
+    { id = 51271, class = "DEATHKNIGHT" },  -- Pillar of Frost (cd 45s)
+    { id = 207289, class = "DEATHKNIGHT" },  -- Unholy Assault (cd 1.5 min)
+    { id = 1249658, priority = true, class = "DEATHKNIGHT", alts = { 152279 } },  -- Breath of Sindragosa (cd 2 min)
+    -- Demonhunter
+    { id = 162264, priority = true, class = "DEMONHUNTER", alts = { 191427 } },  -- Metamorphosis (cd 2 min)
     -- Druid
-    { id = 106951,  class = "DRUID", alts = { 102543 } },    -- Berserk / Incarnation (Feral)
-    { id = 194223,  class = "DRUID", alts = { 102560 } },    -- Celestial Alignment / Incarnation (Balance)
-    { id = 5217,    class = "DRUID", default = false },      -- Tiger's Fury
+    { id = 106951, priority = true, class = "DRUID", alts = { 102543 } },  -- Berserk (cd 3 min)
+    { id = 194223, class = "DRUID", alts = { 102560 } },  -- Celestial Alignment (cd ?)
+    { id = 5217, class = "DRUID", default = false },  -- Tiger's Fury (cd 30s)
     -- Evoker
-    { id = 375087,  class = "EVOKER" },                      -- Dragonrage
+    { id = 375087, priority = true, class = "EVOKER" },  -- Dragonrage (cd 2 min)
+    { id = 403631, priority = true, class = "EVOKER", default = false },  -- Breath of Eons (cd 2 min)
     -- Hunter
-    { id = 288613,  class = "HUNTER" },                      -- Trueshot
-    { id = 19574,   class = "HUNTER" },                      -- Bestial Wrath
-    { id = 359844,  class = "HUNTER" },                      -- Call of the Wild
-    { id = 266779,  class = "HUNTER" },                      -- Coordinated Assault
+    { id = 288613, priority = true, class = "HUNTER" },  -- Trueshot (cd 2 min)
+    { id = 19574, class = "HUNTER", alts = { 186254, 1235388, 1285912 } },  -- Bestial Wrath (cd 1.5 min)
+    { id = 1250646, class = "HUNTER", alts = { 1251703 } },  -- Takedown (cd 1.5 min)
+    { id = 359844, priority = true, class = "HUNTER" },  -- Call of the Wild (cd 2 min)
+    { id = 266779, priority = true, class = "HUNTER" },  -- Coordinated Assault (cd 2 min)
     -- Mage
-    { id = 190319,  class = "MAGE" },                        -- Combustion
-    { id = 365362,  class = "MAGE", alts = { 365350 } },     -- Arcane Surge
-    { id = 12472,   class = "MAGE" },                        -- Icy Veins
+    { id = 190319, priority = true, class = "MAGE" },  -- Combustion (cd 2 min)
+    { id = 365362, class = "MAGE", alts = { 365350 } },  -- Arcane Surge (cd 1.5 min)
+    { id = 12472, priority = true, class = "MAGE" },  -- Icy Veins (cd 2 min)
     -- Monk
-    { id = 137639,  class = "MONK" },                        -- Storm, Earth, and Fire
-    { id = 152173,  class = "MONK" },                        -- Serenity
+    { id = 137639, class = "MONK" },  -- Storm, Earth, and Fire (cd 16s)
+    { id = 1249625, class = "MONK" },  -- Zenith (cd 16s)
     -- Paladin
-    { id = 31884,   class = "PALADIN", alts = { 231895 } },  -- Avenging Wrath / Crusade
+    { id = 31884, priority = true, class = "PALADIN", alts = { 231895, 454351, 216331 } },  -- Avenging Wrath (cd 2 min)
     -- Priest
-    { id = 194249,  class = "PRIEST" },                      -- Voidform
-    { id = 391109,  class = "PRIEST" },                      -- Dark Ascension
+    { id = 194249, priority = true, class = "PRIEST" },  -- Voidform (cd 2 min)
+    { id = 391109, class = "PRIEST" },  -- Dark Ascension (cd 1 min)
     -- Rogue
-    { id = 13750,   class = "ROGUE" },                       -- Adrenaline Rush
-    { id = 121471,  class = "ROGUE" },                       -- Shadow Blades
-    { id = 185313,  class = "ROGUE", default = false },      -- Shadow Dance
+    { id = 13750, priority = true, class = "ROGUE" },  -- Adrenaline Rush (cd 3 min)
+    { id = 121471, class = "ROGUE" },  -- Shadow Blades (cd 1.5 min)
+    { id = 185422, class = "ROGUE", alts = { 185313 }, default = false },  -- Shadow Dance (cd ?)
     -- Shaman
-    { id = 114050,  class = "SHAMAN", alts = { 114051 } },   -- Ascendance (Elem / Enh)
-    { id = 466772,  class = "SHAMAN" },                      -- Doom Winds
+    { id = 114050, priority = true, class = "SHAMAN", alts = { 114051, 1219480 } },  -- Ascendance (cd 3 min)
+    { id = 466772, class = "SHAMAN" },  -- Doom Winds (cd ?)
     -- Warlock
-    { id = 113858,  class = "WARLOCK" },                     -- Dark Soul: Instability
-    { id = 113860,  class = "WARLOCK" },                     -- Dark Soul: Misery
-    { id = 265273,  class = "WARLOCK" },                     -- Demonic Power (Demonic Tyrant)
+    { id = 442726, class = "WARLOCK" },  -- Malevolence (cd 1 min)
+    { id = 113858, priority = true, class = "WARLOCK" },  -- Dark Soul: Instability (cd 2 min)
+    { id = 113860, priority = true, class = "WARLOCK" },  -- Dark Soul: Misery (cd 2 min)
+    { id = 265273, class = "WARLOCK" },  -- Demonic Power (cd ?)
     -- Warrior
-    { id = 1719,    class = "WARRIOR" },                     -- Recklessness
-    { id = 107574,  class = "WARRIOR" },                     -- Avatar
-    { id = 227847,  class = "WARRIOR", default = false },    -- Bladestorm
+    { id = 1719, class = "WARRIOR" },  -- Recklessness (cd 1.5 min)
+    { id = 107574, class = "WARRIOR" },  -- Avatar (cd 1.5 min)
+    { id = 227847, class = "WARRIOR", default = false },  -- Bladestorm (cd 1.5 min)
 
-    -- Potions de burst Midnight (IDs résolus via wago.tools : ItemXItemEffect → ItemEffect.SpellID)
-    { id = 1236616, class = "POTION" },                      -- Light's Potential (item 241308)
-    { id = 1236994, class = "POTION" },                      -- Potion of Recklessness (item 241288)
-    { id = 1236998, class = "POTION" },                      -- Draught of Rampant Abandon (item 241292)
-    { id = 1238443, class = "POTION" },                      -- Potion of Zealotry (item 241296)
+    -- Potions de burst Midnight (item → ItemXItemEffect → ItemEffect.SpellID)
+    { id = 1236616, class = "POTION" },  -- Light's Potential
+    { id = 1236994, class = "POTION" },  -- Potion of Recklessness
+    { id = 1236998, class = "POTION" },  -- Draught of Rampant Abandon
+    { id = 1238443, class = "POTION" },  -- Potion of Zealotry
 }

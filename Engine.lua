@@ -27,6 +27,7 @@ local pool          = {}  -- [unit.."|"..name] = container
 local active        = {}  -- containers actuellement assignés
 local tracker, unlocked
 local pendingSync   = false
+local retries       = 0
 local errShown      = false
 
 local function Err(msg)
@@ -56,7 +57,10 @@ end
 local function RegisterSounds(units)
     ClearSounds()
     if not PIReq.DB.sound then return true end
-    if not (C_UnitAuras and C_UnitAuras.AddAuraSound) then return true end
+    if not (C_UnitAuras and C_UnitAuras.AddAuraSound) then
+        Err("C_UnitAuras.AddAuraSound indisponible : pas de son en combat/donjon.")
+        return true
+    end
 
     local trigger = (Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added) or 0
     local failed = false
@@ -78,9 +82,10 @@ local function RegisterSounds(units)
                 soundIds[#soundIds + 1] = id
             else
                 failed = true
-                if PIReq.debugMode then
-                    PIReq.Print("AddAuraSound refusé : " .. unit .. " / " .. spellId .. " → " .. tostring(id))
-                end
+                -- Visible une fois par session (sinon l'échec est silencieux et
+                -- l'utilisateur n'entend simplement jamais rien).
+                Err("AddAuraSound refusé (" .. unit .. " / " .. spellId .. ") : " .. tostring(id)
+                    .. " — nouvel essai automatique.")
             end
         end
     end
@@ -250,7 +255,18 @@ function PIReq_EngineSync()
     local units = PIReq.TrackedUnits()
     local soundsOk = RegisterSounds(units)
     SyncContainers(units)
-    if not soundsOk then pendingSync = true end
+    if not soundsOk then
+        pendingSync = true
+        -- Nouvel essai temporisé (3 max) sans attendre la fin d'un combat.
+        retries = retries + 1
+        if retries <= 3 then
+            C_Timer.After(3, function()
+                if pendingSync and PIReq.isPriest and PIReq.DB.enabled then PIReq_EngineSync() end
+            end)
+        end
+    else
+        retries = 0
+    end
 end
 
 function PIReq_EngineStop()

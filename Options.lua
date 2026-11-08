@@ -163,6 +163,8 @@ local function Build()
     y = y - 30
 
     -- CDs par classe --------------------------------------------------------
+    Checkbox("★ CDs prioritaires uniquement (~2 min)", 8, y, function() return db.priorityOnly end,
+        function(v) db.priorityOnly = v; PIReq.ApplyConfig() end); y = y - 30
     Text("GameFontNormal", "CDs offensifs qui déclenchent l'alerte", 8, y)
     Button("Tout cocher", 300, y + 4, 110, function()
         for _, e in ipairs(PIReq.SPELLS) do db.spells[e.id] = true end
@@ -179,6 +181,10 @@ local function Build()
         for _, e in ipairs(PIReq.SPELLS) do
             if e.class == class then entries[#entries + 1] = e end
         end
+        table.sort(entries, function(a, b)
+            if (a.priority and 1 or 0) ~= (b.priority and 1 or 0) then return a.priority end
+            return a.id < b.id
+        end)
         if #entries > 0 then
             Text("GameFontNormal", ClassTitle(class), 8, y)
             Button("Aucun", 210, y + 3, 60, function()
@@ -204,7 +210,7 @@ local function Build()
                 fs:SetPoint("LEFT", icon, "RIGHT", 4, 0)
                 refreshers[#refreshers + 1] = function()
                     icon:SetTexture(SpellIcon(e.id))
-                    fs:SetText(SpellLabel(e.id))
+                    fs:SetText((e.priority and "|cffffd700★|r " or "") .. SpellLabel(e.id))
                 end
             end
             y = y - math.ceil(#entries / 2) * 24 - 10

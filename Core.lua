@@ -19,6 +19,7 @@ local DEFAULTS = {
     enabled      = true,
     sound        = true,
     tracker      = true,   -- icônes moteur (mode secret)
+    priorityOnly = false,  -- seulement les CDs ★ (priorité haute)
     filterByName = false,  -- limiter aux personnages de `names`
     names        = {},     -- { "Nom1", "Nom2" }
     spells       = {},     -- [spellId] = true/false (surcharge du défaut)
@@ -54,14 +55,28 @@ end
 
 -- Nom court d'une unité. Peut être secret dans certains contextes : on garde
 -- alors le dernier nom lisible connu.
+local function Readable(v)
+    return type(v) == "string" and not issecret(v) and v ~= ""
+end
+
+-- "Unknown" = nom pas encore chargé (fréquent à l'entrée en raid) : à traiter
+-- comme illisible, sinon le joueur filtré serait écarté définitivement.
+-- Le cache est indexé par token MAIS validé par GUID, car les tokens raidN
+-- changent d'occupant quand le roster est réorganisé.
 function PIReq.UnitShortName(unit)
+    local gok, guid = pcall(UnitGUID, unit)
+    if not (gok and Readable(guid)) then guid = nil end
+
     local ok, n = pcall(GetUnitName, unit, true)
-    if ok and type(n) == "string" and not issecret(n) and n ~= "" then
+    if ok and Readable(n) and n ~= UNKNOWNOBJECT and n ~= "Unknown" then
         n = Ambiguate(n, "short")
-        PIReq.nameCache[unit] = n
+        PIReq.nameCache[unit] = { name = n, guid = guid }
         return n
     end
-    return PIReq.nameCache[unit]
+
+    local c = PIReq.nameCache[unit]
+    if c and guid and c.guid == guid then return c.name end
+    return nil
 end
 
 local function NameFilterActive()
@@ -128,7 +143,8 @@ end
 function PIReq.RebuildSpellSet()
     local set = {}
     for _, entry in ipairs(PIReq.SPELLS) do
-        if PIReq.IsEntryEnabled(entry) then
+        local prioOk = not PIReq.DB.priorityOnly or entry.priority or entry.class == "POTION"
+        if prioOk and PIReq.IsEntryEnabled(entry) then
             set[entry.id] = true
             for _, alt in ipairs(entry.alts or {}) do set[alt] = true end
         end
@@ -214,6 +230,21 @@ local function HandleSlash(msg)
         for _, u in ipairs(units) do
             print_("  " .. u .. " = " .. tostring(PIReq.UnitShortName(u)))
         end
+        print_("Ascendance (114050/114051/1219480) actif : " ..
+            tostring(PIReq.spellSet[114050] and PIReq.spellSet[114051] and PIReq.spellSet[1219480] or false))
+        if NameFilterActive() and #units == 0 then
+            -- Aide au diagnostic : montre ce que l'addon lit comme noms dans le groupe.
+            print_("|cffff6600Aucun membre ne correspond au filtre|r (" .. table.concat(db.names, ", ") .. "). Noms lus :")
+            local prefix, max = IsInRaid() and "raid" or "party", IsInRaid() and 40 or 4
+            for i = 1, max do
+                local t = prefix .. i
+                if UnitExists(t) then
+                    local ok, raw = pcall(GetUnitName, t, true)
+                    print_(string.format("  %s : lu=%s  court=%s", t, tostring(ok and Readable(raw) and raw or "illisible"),
+                        tostring(PIReq.UnitShortName(t))))
+                end
+            end
+        end
 
     elseif cmd == "only" then
         if rest == "" or rest:lower() == "off" then
@@ -272,8 +303,24 @@ coreFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 coreFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 coreFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 coreFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
+coreFrame:RegisterEvent("UNIT_NAME_UPDATE")
+
+local nameRetryPending = false
 
 coreFrame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "UNIT_NAME_UPDATE" then
+        -- Un nom de groupe vient de se charger : si un filtre par nom est actif,
+        -- on reconstruit (debounce) pour intégrer le joueur qui manquait.
+        if PIReq.DB and PIReq.isPriest and NameFilterActive() and not nameRetryPending
+           and type(arg1) == "string" and (arg1:find("^raid%d") or arg1:find("^party%d")) then
+            nameRetryPending = true
+            C_Timer.After(1, function()
+                nameRetryPending = false
+                PIReq.Refresh()
+            end)
+        end
+        return
+    end
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
 
