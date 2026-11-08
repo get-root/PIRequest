@@ -233,7 +233,10 @@ local function CreateRowContainer(unit, name)
 end
 
 local function ParkAll()
-    for _, c in ipairs(active) do pcall(c.SetUnit, c, NO_UNIT) end
+    for _, c in ipairs(active) do
+        pcall(c.SetUnit, c, NO_UNIT)
+        if c.SetEnabled then pcall(c.SetEnabled, c, false) end
+    end
     wipe(active)
 end
 
@@ -264,7 +267,13 @@ local function SyncContainers(units)
             if c.SetAuraGroupCandidateFilters then
                 pcall(c.SetAuraGroupCandidateFilters, c, GROUP_KEY, { includeSpellIDs = IncludeSet() })
             end
+            -- Même séquence que le moteur de référence (AuraKit.FinishContainer) :
+            -- activer, lier l'unité, PUIS demander un rafraîchissement complet.
+            -- Sans UpdateAllAuras le container reste vide.
+            if c.SetEnabled then pcall(c.SetEnabled, c, true) end
+            c:Show()
             local ok, err = pcall(c.SetUnit, c, unit)
+            if ok and c.UpdateAllAuras then ok, err = pcall(c.UpdateAllAuras, c) end
             if ok then
                 active[#active + 1] = c
             else

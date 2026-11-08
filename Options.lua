@@ -45,6 +45,139 @@ local function ClassTitle(class)
     return name
 end
 
+-- ---------------------------------------------------------------------------
+-- Sélecteur de son : recherche dans tout le catalogue
+-- ---------------------------------------------------------------------------
+
+local ROWS = 12
+local picker
+
+local function CurrentSoundLabel()
+    local db = PIReq.DB
+    if db.soundKey == "custom" then
+        return db.soundName or ("FileDataID " .. tostring(db.soundCustom))
+    end
+    for _, s in ipairs(PIReq.SOUNDS) do
+        if s.key == db.soundKey then return s.label end
+    end
+    return PIReq.SOUNDS[1].label
+end
+
+local function OpenSoundPicker()
+    if picker then picker:Show() return end
+    local cat = PIReq.SOUND_CATALOG
+    local lower = {}
+    for i, e in ipairs(cat) do lower[i] = e[2]:lower() end
+
+    local f = CreateFrame("Frame", "PIReqSoundPicker", UIParent, "BackdropTemplate")
+    picker = f
+    f:SetSize(460, 40 + ROWS * 22 + 70)
+    f:SetPoint("CENTER")
+    f:SetFrameStrata("DIALOG")
+    f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetBackdrop({ bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+                    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+                    tile = true, tileSize = 32, edgeSize = 32,
+                    insets = { left = 8, right = 8, top = 8, bottom = 8 } })
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOP", 0, -16)
+    title:SetText("Choisir un son (" .. #cat .. " sons du jeu)")
+
+    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+
+    local search = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+    search:SetPoint("TOPLEFT", 24, -44)
+    search:SetSize(400, 22)
+    search:SetAutoFocus(false)
+
+    local filtered, page = {}, 1
+    local rows = {}
+    local info = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    info:SetPoint("BOTTOM", 0, 20)
+
+    local function Refilter()
+        wipe(filtered)
+        local terms = {}
+        for t in (search:GetText() or ""):lower():gmatch("%S+") do terms[#terms + 1] = t end
+        for i = 1, #cat do
+            local ok = true
+            for _, t in ipairs(terms) do
+                if not lower[i]:find(t, 1, true) then ok = false break end
+            end
+            if ok then filtered[#filtered + 1] = i end
+        end
+        page = 1
+    end
+
+    local function Render()
+        local pages = math.max(1, math.ceil(#filtered / ROWS))
+        if page > pages then page = pages end
+        if page < 1 then page = 1 end
+        local db = PIReq.DB
+        for r = 1, ROWS do
+            local idx = filtered[(page - 1) * ROWS + r]
+            local row = rows[r]
+            if idx then
+                local e = cat[idx]
+                row.entry = e
+                row.text:SetText(e[2])
+                row.sel:SetShown(db.soundKey == "custom" and db.soundCustom == e[1])
+                row:Show()
+            else
+                row.entry = nil
+                row:Hide()
+            end
+        end
+        info:SetText(string.format("%d résultat(s) — page %d/%d — clic = écouter et choisir", #filtered, page, pages))
+    end
+
+    for r = 1, ROWS do
+        local row = CreateFrame("Button", nil, f)
+        row:SetSize(420, 20)
+        row:SetPoint("TOPLEFT", 24, -74 - (r - 1) * 22)
+        row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        row.sel = row:CreateTexture(nil, "BACKGROUND")
+        row.sel:SetAllPoints()
+        row.sel:SetColorTexture(1, 0.84, 0, 0.25)
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        row.text:SetPoint("LEFT", 4, 0)
+        row.text:SetPoint("RIGHT", -4, 0)
+        row.text:SetJustifyH("LEFT")
+        row:SetScript("OnClick", function(self)
+            local e = self.entry
+            if not e then return end
+            local db = PIReq.DB
+            db.soundKey, db.soundCustom, db.soundName = "custom", e[1], e[2]
+            PIReq.PlayAlertSound()
+            PIReq.Refresh()          -- ré-enregistre les sons moteur avec ce FileDataID
+            PIReq.RefreshOptions()
+            Render()
+        end)
+        rows[r] = row
+    end
+
+    local prev = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    prev:SetSize(70, 22); prev:SetPoint("BOTTOMLEFT", 24, 16); prev:SetText("< Préc.")
+    prev:SetScript("OnClick", function() page = page - 1; Render() end)
+    local nxt = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    nxt:SetSize(70, 22); nxt:SetPoint("BOTTOMRIGHT", -24, 16); nxt:SetText("Suiv. >")
+    nxt:SetScript("OnClick", function() page = page + 1; Render() end)
+
+    f:EnableMouseWheel(true)
+    f:SetScript("OnMouseWheel", function(_, delta) page = page - delta; Render() end)
+
+    search:SetScript("OnTextChanged", function() Refilter(); Render() end)
+    search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+
+    tinsert(UISpecialFrames, "PIReqSoundPicker") -- Échap ferme
+    Refilter(); Render()
+end
+
 local function Build()
     if built then return end
     built = true
@@ -112,6 +245,10 @@ local function Build()
     -- Choix du son ----------------------------------------------------------
     Text("GameFontNormal", "Son d'alerte", 8, y)
     Button("Écouter", 120, y + 4, 80, function() PIReq.PlayAlertSound() end)
+    Button("Tous les sons…", 206, y + 4, 130, OpenSoundPicker)
+    local current = Text("GameFontHighlightSmall", "", 346, y - 4)
+    current:SetWidth(230)
+    refreshers[#refreshers + 1] = function() current:SetText("Actuel : " .. CurrentSoundLabel()) end
     y = y - 26
     for i, snd in ipairs(PIReq.SOUNDS) do
         local col = (i - 1) % 2
@@ -120,6 +257,7 @@ local function Build()
             function() return db.soundKey == snd.key end,
             function()
                 db.soundKey = snd.key
+                db.soundName = nil
                 PIReq.PlayAlertSound()           -- aperçu
                 PIReq.Refresh()                  -- ré-enregistre les sons moteur
                 PIReq.RefreshOptions()

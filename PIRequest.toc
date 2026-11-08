@@ -6,6 +6,7 @@
 ## SavedVariables: PIRequestDB
 
 Data.lua
+SoundCatalog.lua
 Core.lua
 Highlighter.lua
 AuraWatcher.lua
