@@ -109,6 +109,45 @@ local function Build()
     Button("Déplacer le tracker", 380, y - 2, 150, function() PIReq_ToggleTrackerUnlock() end)
     y = y - 36
 
+    -- Choix du son ----------------------------------------------------------
+    Text("GameFontNormal", "Son d'alerte", 8, y)
+    Button("Écouter", 120, y + 4, 80, function() PIReq.PlayAlertSound() end)
+    y = y - 26
+    for i, snd in ipairs(PIReq.SOUNDS) do
+        local col = (i - 1) % 2
+        local row = math.floor((i - 1) / 2)
+        Checkbox(snd.label, 8 + col * 280, y - row * 24,
+            function() return db.soundKey == snd.key end,
+            function()
+                db.soundKey = snd.key
+                PIReq.PlayAlertSound()           -- aperçu
+                PIReq.Refresh()                  -- ré-enregistre les sons moteur
+                PIReq.RefreshOptions()
+            end)
+    end
+    y = y - math.ceil(#PIReq.SOUNDS / 2) * 24 - 4
+    Checkbox("Personnalisé (FileDataID) :", 8, y,
+        function() return db.soundKey == "custom" end,
+        function(v)
+            if v and tonumber(db.soundCustom) then
+                db.soundKey = "custom"; PIReq.PlayAlertSound(); PIReq.Refresh()
+            end
+            PIReq.RefreshOptions()
+        end)
+    local customSound = EditBox(240, y - 2, 110, function(text)
+        local n = tonumber(text)
+        if n then
+            db.soundCustom = n; db.soundKey = "custom"
+            PIReq.PlayAlertSound(); PIReq.Refresh()
+        end
+        PIReq.RefreshOptions()
+    end)
+    customSound:SetNumeric(true)
+    refreshers[#refreshers + 1] = function() customSound:SetText(db.soundCustom and tostring(db.soundCustom) or "") end
+    y = y - 26
+    Text("GameFontDisableSmall", "Entrée pour valider. Les FileDataID se trouvent sur wago.tools/files (sons .ogg/.mp3).", 16, y)
+    y = y - 30
+
     -- Filtre par nom --------------------------------------------------------
     Text("GameFontNormal", "Filtre par personnage (optionnel)", 8, y); y = y - 22
     Checkbox("Ne m'alerter que pour ces personnages :", 8, y, function() return db.filterByName end,

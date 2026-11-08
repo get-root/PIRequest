@@ -79,3 +79,19 @@ PIReq.SPELLS = {
     { id = 1236998, class = "POTION" },  -- Draught of Rampant Abandon
     { id = 1238443, class = "POTION" },  -- Potion of Zealotry
 }
+
+-- Sons proposés. `kit` = SoundKit (PlaySound, chemin lisible) ; `file` =
+-- FileDataID (C_UnitAuras.AddAuraSound, chemin secret). Les deux désignent le
+-- même son : correspondance vérifiée via les tables SoundKitEntry et le listfile
+-- communautaire (chemins sound/interface/…).
+PIReq.SOUNDS = {
+    { key = "raidwarning", label = "Avertissement de raid",  kit = 8959,  file = 567397 }, -- raidwarning.ogg
+    { key = "bosswhisper", label = "Murmure de boss",        kit = 37666, file = 876098 }, -- ui_raidbosswhisperwarning.ogg
+    { key = "alarm",       label = "Réveil",                 kit = 12867, file = 567399 }, -- alarmclockwarning2.ogg
+    { key = "bnettoast",   label = "Notification Battle.net",kit = 18019, file = 567402 }, -- ui_bnettoast.ogg
+    { key = "levelup",     label = "Montée de niveau",       kit = 888,   file = 569593 }, -- levelup.ogg
+    { key = "ping",        label = "Ping de carte",          kit = 3175,  file = 567416 }, -- mapping.ogg
+    { key = "invite",      label = "Invitation",             kit = 880,   file = 567451 }, -- iplayerinvitea.ogg
+    { key = "bell",        label = "Cloche",                 kit = 6674,  file = 566558 }, -- belltollnightelf.ogg
+    { key = "rep",         label = "Réputation",             kit = 8473,  file = 568016 }, -- reputationlevelup.ogg
+}

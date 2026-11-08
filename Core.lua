@@ -18,6 +18,8 @@ local issecret   = issecretvalue or function() return false end
 local DEFAULTS = {
     enabled      = true,
     sound        = true,
+    soundKey     = "raidwarning", -- clé de PIReq.SOUNDS, ou "custom"
+    soundCustom  = nil,    -- FileDataID si soundKey == "custom"
     tracker      = true,   -- icônes moteur (mode secret)
     priorityOnly = false,  -- seulement les CDs ★ (priorité haute)
     filterByName = false,  -- limiter aux personnages de `names`
@@ -128,6 +130,30 @@ function PIReq.TrackedUnits()
         end
     end
     return units
+end
+
+-- ---------------------------------------------------------------------------
+-- Son d'alerte
+-- ---------------------------------------------------------------------------
+
+-- Retourne (soundKit, fileDataID) du son choisi. Le son personnalisé n'a qu'un
+-- FileDataID (kit = nil).
+function PIReq.GetSound()
+    local db = PIReq.DB
+    if db.soundKey == "custom" and tonumber(db.soundCustom) then
+        return nil, tonumber(db.soundCustom)
+    end
+    for _, s in ipairs(PIReq.SOUNDS) do
+        if s.key == db.soundKey then return s.kit, s.file end
+    end
+    local d = PIReq.SOUNDS[1]
+    return d.kit, d.file
+end
+
+function PIReq.PlayAlertSound()
+    local kit, file = PIReq.GetSound()
+    if kit then PlaySound(kit, "Master")
+    elseif file then PlaySoundFile(file, "Master") end
 end
 
 -- ---------------------------------------------------------------------------

@@ -14,7 +14,6 @@
 -- Méthode inspirée de la façon dont EllesmereUI affiche les auras (AuraContainer
 -- filtré par spellId) ; aucun code ni aucune liste n'en est copié.
 
-local SOUND_FILE  = (SOUNDKIT and SOUNDKIT.RAID_WARNING) or 8959
 local MAX_SOUNDS  = 300   -- garde-fou : unités × sorts
 local MAX_ROWS    = 10
 local ICON        = 40
@@ -64,6 +63,7 @@ local function RegisterSounds(units)
 
     local trigger = (Enum and Enum.UnitAuraSoundTrigger and Enum.UnitAuraSoundTrigger.Added) or 0
     local failed = false
+    local _, soundFile = PIReq.GetSound()
     for _, unit in ipairs(units) do
         for spellId in pairs(PIReq.spellSet) do
             if #soundIds >= MAX_SOUNDS then
@@ -74,7 +74,7 @@ local function RegisterSounds(units)
             local ok, id = pcall(C_UnitAuras.AddAuraSound, trigger, {
                 unitToken       = unit,
                 spellID         = spellId,
-                soundFileID     = SOUND_FILE,
+                soundFileID     = soundFile, -- FileDataID (≠ SoundKit)
                 outputChannel   = "Master",
                 throttleSeconds = 5,
             })

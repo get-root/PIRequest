@@ -54,6 +54,9 @@ réservés » : **ne rien copier** (ni code ni listes).
 - `AddAuraSound` / création de containers : appels potentiellement refusés en
   combat → `pendingSync` retenté à `PLAYER_REGEN_ENABLED`.
 - Ne jamais comparer/itérer une valeur sans `issecretvalue()` d'abord.
+- Sons : `PlaySound` prend un **SoundKit**, `AddAuraSound` un **FileDataID** (≠ !).
+  `PIReq.SOUNDS` (Data.lua) porte les deux ; `PIReq.GetSound()` / `PlayAlertSound()`.
+  Choix dans les options (`soundKey`, ou `custom` + `soundCustom` = FileDataID).
 - ⚠️ Code **non testé en jeu** (écrit sans client) : à valider avec
   `/pirequest scan` et `/pirequest debug` — notamment sons parasites à l'entrée
   d'une instance (aura « Added » initiale) et rendu des icônes.

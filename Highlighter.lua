@@ -97,7 +97,7 @@ local function ShowNotification(playerName, spellId, playSound)
         f:Show()
 
         if playSound then
-            PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
+            PIReq.PlayAlertSound()
         end
 
         if notifTimer then notifTimer:Cancel() end
