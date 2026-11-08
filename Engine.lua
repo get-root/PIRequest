@@ -16,8 +16,8 @@
 
 local MAX_SOUNDS  = 300   -- garde-fou : unités × sorts
 local MAX_ROWS    = 10
-local ICON        = 40
-local GAP         = 22    -- place pour le nom sous l'icône
+local ICON        = 52
+local GAP         = 30    -- place pour le nom sous l'icône
 local NO_UNIT     = "none"
 local GROUP_KEY   = "pirequest"
 
@@ -113,7 +113,7 @@ local function EnsureTracker()
     if pos then
         f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4])
     else
-        f:SetPoint("CENTER", UIParent, "CENTER", -300, 120)
+        f:SetPoint("TOP", UIParent, "TOP", 0, -330) -- sous la bannière
     end
 
     f:SetMovable(true)
@@ -133,9 +133,41 @@ local function EnsureTracker()
     label:Hide()
     f.label = label
 
+    -- Exemple (icône PI + nom) pour voir le placement sans attendre un vrai CD.
+    local sample = CreateFrame("Frame", nil, f)
+    sample:SetAllPoints(f)
+    local sb = sample:CreateTexture(nil, "BACKGROUND")
+    sb:SetSize(ICON + 4, ICON + 4)
+    sb:SetPoint("TOPLEFT", -2, 2)
+    sb:SetColorTexture(1, 0.84, 0, 1)
+    local si = sample:CreateTexture(nil, "ARTWORK")
+    si:SetSize(ICON, ICON)
+    si:SetPoint("TOPLEFT")
+    local tex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(10060)
+    if tex then si:SetTexture(tex) end
+    local st = sample:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    st:SetPoint("TOP", si, "BOTTOM", 0, -3)
+    st:SetText(UnitName("player") or "Joueur")
+    sample:Hide()
+    f.sample = sample
+
     f:EnableMouse(false)
     tracker = f
     return f
+end
+
+local previewTimer
+local function UpdateSample()
+    if not tracker then return end
+    tracker.sample:SetShown(unlocked or previewTimer ~= nil)
+end
+
+-- Affiche l'exemple quelques secondes (/pirequest test).
+function PIReq_TrackerPreview(seconds)
+    EnsureTracker()
+    if previewTimer then previewTimer:Cancel() end
+    previewTimer = C_Timer.NewTimer(seconds or 5, function() previewTimer = nil; UpdateSample() end)
+    UpdateSample()
 end
 
 function PIReq_ToggleTrackerUnlock()
@@ -144,6 +176,7 @@ function PIReq_ToggleTrackerUnlock()
     f:EnableMouse(unlocked)
     f.bg:SetShown(unlocked)
     f.label:SetShown(unlocked)
+    UpdateSample()
     PIReq.Print(unlocked and "Tracker déverrouillé : glisse-le, puis /pirequest tracker pour verrouiller."
                           or  "Tracker verrouillé.")
 end
@@ -174,7 +207,7 @@ local function MakeInitializer(name)
         cd:SetAllPoints(button)
 
         -- Le nom vit sur le bouton : il n'apparaît donc que quand une aura est affichée.
-        local text = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        local text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
         text:SetPoint("TOP", button, "BOTTOM", 0, -3)
         text:SetText(name)
 

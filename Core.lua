@@ -234,6 +234,7 @@ local function HandleSlash(msg)
         local name = UnitName("player")
         print_("Test notification → " .. name)
         PIReq_Highlight(name, 10060, true)
+        PIReq_TrackerPreview(5)
 
     elseif cmd == "status" then
         print_(string.format("isPriest=%s spec=%s enabled=%s sound=%s tracker=%s",

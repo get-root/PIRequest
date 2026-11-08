@@ -17,6 +17,7 @@ local issecret = issecretvalue or function() return false end
 
 local watchFrames    = {} -- [unitToken] = frame
 local alertCooldowns = {} -- [unitToken] = timestamp dernière alerte
+local lastSecretLog  = {} -- anti-spam du log debug
 
 local function TryAlert(unit, spellId)
     local now = GetTime()
@@ -39,7 +40,16 @@ local function TryAlert(unit, spellId)
 end
 
 local function OnUnitAura(unit, updateInfo)
-    if PIReq.IsRestricted() then return end            -- le moteur s'en charge
+    if PIReq.IsRestricted() then                       -- le moteur s'en charge
+        if PIReq.debugMode then
+            local now = GetTime()
+            if (now - (lastSecretLog[unit] or 0)) > 5 then
+                lastSecretLog[unit] = now
+                PIReq.Print(unit .. " : auras secrètes → bannière impossible, son + icône gérés par le moteur")
+            end
+        end
+        return
+    end
     if updateInfo == nil or issecret(updateInfo) then return end
     local added = updateInfo.addedAuras
     if added == nil or issecret(added) then return end
