@@ -237,6 +237,8 @@ local function Build()
         function(v) db.enabled = v; PIReq.Refresh() end); y = y - 26
     Checkbox("Son d'alerte", 8, y, function() return db.sound end,
         function(v) db.sound = v; PIReq.Refresh() end); y = y - 26
+    Checkbox("Masquer les alertes pendant la recharge de Power Infusion (2 min)", 8, y, function() return db.hideOnCooldown end,
+        function(v) db.hideOnCooldown = v; PIReq.Refresh() end); y = y - 26
     Checkbox("Icônes de CD en combat / donjon (tracker déplaçable)", 8, y, function() return db.tracker end,
         function(v) db.tracker = v; PIReq.Refresh() end)
     Button("Déplacer le tracker", 380, y - 2, 150, function() PIReq_ToggleTrackerUnlock() end)

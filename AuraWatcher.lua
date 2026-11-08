@@ -19,7 +19,8 @@ local watchFrames    = {} -- [unitToken] = frame
 local alertCooldowns = {} -- [unitToken] = timestamp dernière alerte
 local lastSecretLog  = {} -- anti-spam du log debug
 
-local function TryAlert(unit, spellId)
+function PIReq.RaiseAlert(unit, spellId)
+    if PIReq.AlertsMuted() then return end
     local now = GetTime()
     local last = alertCooldowns[unit]
     if last and (now - last) < DEDUP_WINDOW then
@@ -57,7 +58,7 @@ local function OnUnitAura(unit, updateInfo)
     for _, aura in ipairs(added) do
         local spellId = aura.spellId
         if spellId ~= nil and not issecret(spellId) and PIReq.spellSet[spellId] then
-            TryAlert(unit, spellId)
+            PIReq.RaiseAlert(unit, spellId)
             return
         end
     end
@@ -76,7 +77,7 @@ end
 function PIReq_StartWatching()
     PIReq_StopWatching()
 
-    local units = PIReq.TrackedUnits()
+    local units = PIReq.ActiveUnits()
     for _, token in ipairs(units) do
         local f = CreateFrame("Frame")
         f:RegisterUnitEvent("UNIT_AURA", token)

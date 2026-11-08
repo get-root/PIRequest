@@ -21,6 +21,7 @@ local DEFAULTS = {
     soundKey     = "raidwarning", -- clé de PIReq.SOUNDS, ou "custom"
     soundCustom  = nil,    -- FileDataID si soundKey == "custom"
     tracker      = true,   -- icônes moteur (mode secret)
+    hideOnCooldown = true, -- pas d'alerte pendant la recharge de Power Infusion
     priorityOnly = false,  -- seulement les CDs ★ (priorité haute)
     filterByName = false,  -- limiter aux personnages de `names`
     names        = {},     -- { "Nom1", "Nom2" }
@@ -133,6 +134,63 @@ function PIReq.TrackedUnits()
 end
 
 -- ---------------------------------------------------------------------------
+-- Recharge de Power Infusion : pas d'alerte inutile quand PI n'est pas dispo
+-- ---------------------------------------------------------------------------
+
+local PI_SPELL_ID  = 10060
+local PI_COOLDOWN  = 120   -- secondes (2 min), utilisé si la vraie durée est illisible
+local piReadyAt    = 0
+
+function PIReq.PIOnCooldown()
+    return GetTime() < piReadyAt
+end
+
+function PIReq.AlertsMuted()
+    return PIReq.DB and PIReq.DB.hideOnCooldown and PIReq.PIOnCooldown() or false
+end
+
+-- Units réellement surveillées maintenant (aucune pendant la recharge de PI).
+function PIReq.ActiveUnits()
+    if PIReq.AlertsMuted() then return {} end
+    return PIReq.TrackedUnits()
+end
+
+local function ScheduleReady(delay)
+    C_Timer.After(delay + 0.2, function()
+        if GetTime() >= piReadyAt then PIReq.Refresh() end  -- PI de nouveau dispo : on réarme
+    end)
+end
+
+-- Relit la vraie recharge (/reload en pleine recharge). Les champs peuvent être
+-- secrets en combat : dans ce cas on ne touche à rien.
+local function SyncPICooldown()
+    if not (C_Spell and C_Spell.GetSpellCooldown) then return end
+    local ok, info = pcall(C_Spell.GetSpellCooldown, PI_SPELL_ID)
+    if not ok or type(info) ~= "table" or issecret(info) then return end
+    local start, dur = info.startTime, info.duration
+    if issecret(start) or issecret(dur) or type(start) ~= "number" or type(dur) ~= "number" then return end
+    if dur > 2 and start > 0 then               -- > GCD : vraie recharge
+        piReadyAt = start + dur
+        ScheduleReady(piReadyAt - GetTime())
+    end
+end
+
+local function OnPICast()
+    local dur = PI_COOLDOWN
+    if C_Spell and C_Spell.GetSpellCooldown then
+        local ok, info = pcall(C_Spell.GetSpellCooldown, PI_SPELL_ID)
+        if ok and type(info) == "table" and not issecret(info) then
+            local d = info.duration
+            if type(d) == "number" and not issecret(d) and d > 2 then dur = d end
+        end
+    end
+    piReadyAt = GetTime() + dur
+    if PIReq.debugMode then PIReq.Print(string.format("PI lancée : alertes coupées %ds", dur)) end
+    PIReq.Refresh()
+    ScheduleReady(dur)
+end
+
+-- ---------------------------------------------------------------------------
 -- Son d'alerte
 -- ---------------------------------------------------------------------------
 
@@ -204,9 +262,11 @@ function PIReq.Refresh()
     if PIReq.isPriest and PIReq.DB.enabled then
         PIReq_StartWatching()
         PIReq_EngineSync()
+        PIReq_PollerSync()
     else
         PIReq_StopWatching()
         PIReq_EngineStop()
+        PIReq_PollerSync()
     end
 end
 
@@ -241,6 +301,7 @@ local function HandleSlash(msg)
             tostring(PIReq.isPriest), tostring(GetSpecialization()),
             tostring(db.enabled), tostring(db.sound), tostring(db.tracker)))
         print_("auras secrètes maintenant : " .. tostring(PIReq.IsRestricted()))
+        print_(string.format("masquer pendant recharge PI : %s (PI en recharge : %s)", tostring(db.hideOnCooldown), tostring(PIReq.PIOnCooldown())))
         if NameFilterActive() then
             print_("filtre par nom : " .. table.concat(db.names, ", "))
         else
@@ -249,7 +310,7 @@ local function HandleSlash(msg)
 
     elseif cmd == "scan" then
         -- Diagnostic : ce que l'addon surveille réellement.
-        local units = PIReq.TrackedUnits()
+        local units = PIReq.ActiveUnits()
         local n = 0
         for _ in pairs(PIReq.spellSet) do n = n + 1 end
         print_(string.format("%d unit(s) surveillée(s), %d spellId(s) actifs, sons moteur=%d, icônes moteur=%d",
@@ -257,6 +318,7 @@ local function HandleSlash(msg)
         for _, u in ipairs(units) do
             print_("  " .. u .. " = " .. tostring(PIReq.UnitShortName(u)))
         end
+        for _, line in ipairs(PIReq_EngineDebug()) do print_("  " .. line) end
         print_("Ascendance (114050/114051/1219480) actif : " ..
             tostring(PIReq.spellSet[114050] and PIReq.spellSet[114051] and PIReq.spellSet[1219480] or false))
         if NameFilterActive() and #units == 0 then
@@ -272,6 +334,22 @@ local function HandleSlash(msg)
                 end
             end
         end
+
+    elseif cmd == "secrecy" then
+        -- Pour chaque CD actif : l'aura est-elle secrète ? (détermine ce qui est détectable en combat)
+        local names = { [0] = "jamais secrète", [1] = "toujours secrète", [2] = "secrète selon contexte" }
+        local shown = 0
+        for _, e in ipairs(PIReq.SPELLS) do
+            if PIReq.spellSet[e.id] then
+                local ok, lvl = pcall(C_Secrets.GetSpellAuraSecrecy, e.id)
+                local ok2, now = pcall(C_Secrets.ShouldSpellAuraBeSecret, e.id)
+                print_(string.format("  %s (%d) : %s — secrète maintenant=%s",
+                    C_Spell.GetSpellName(e.id) or "?", e.id,
+                    ok and names[lvl] or "API indisponible", ok2 and tostring(now) or "?"))
+                shown = shown + 1
+            end
+        end
+        if shown == 0 then print_("Aucun sort actif.") end
 
     elseif cmd == "only" then
         if rest == "" or rest:lower() == "off" then
@@ -316,7 +394,7 @@ local function HandleSlash(msg)
         PIReq.Refresh()
 
     else
-        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | tracker | sound | toggle | enable | disable | debug")
+        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | tracker | sound | toggle | enable | disable | debug")
     end
 end
 
@@ -331,10 +409,16 @@ coreFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 coreFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 coreFrame:RegisterEvent("PLAYER_ROLES_ASSIGNED")
 coreFrame:RegisterEvent("UNIT_NAME_UPDATE")
+coreFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 local nameRetryPending = false
 
-coreFrame:SetScript("OnEvent", function(_, event, arg1)
+coreFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        -- Fiable uniquement pour "player" (spellId lisible) : sert à détecter MON PI.
+        if PIReq.DB and PIReq.isPriest and not issecret(arg3) and arg3 == PI_SPELL_ID then OnPICast() end
+        return
+    end
     if event == "UNIT_NAME_UPDATE" then
         -- Un nom de groupe vient de se charger : si un filtre par nom est actif,
         -- on reconstruit (debounce) pour intégrer le joueur qui manquait.
@@ -365,6 +449,7 @@ coreFrame:SetScript("OnEvent", function(_, event, arg1)
         print_("chargé. /pirequest config pour les options.")
 
     elseif PIReq.DB then
+        if event == "PLAYER_ENTERING_WORLD" then SyncPICooldown() end
         PIReq.Refresh()
     end
 end)

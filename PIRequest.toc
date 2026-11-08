@@ -10,5 +10,6 @@ SoundCatalog.lua
 Core.lua
 Highlighter.lua
 AuraWatcher.lua
+Poller.lua
 Engine.lua
 Options.lua

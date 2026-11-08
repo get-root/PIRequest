@@ -36,6 +36,24 @@ local function Err(msg)
     end
 end
 
+-- Diagnostic /pirequest scan : état réel des containers.
+function PIReq_EngineDebug()
+    local lines = {}
+    if not tracker then return { "tracker non créé (aucune unité/aucun sort, ou option désactivée)" } end
+    local ok, shown = pcall(tracker.IsShown, tracker)
+    lines[#lines + 1] = string.format("tracker : shown=%s alpha=%s", tostring(ok and shown), tostring(tracker:GetEffectiveAlpha()))
+    for i, c in ipairs(active) do
+        local o1, u = pcall(c.GetUnit, c)
+        local o2, sh = pcall(c.IsShown, c)
+        local o3, w = pcall(c.GetWidth, c)
+        local o4, h = pcall(c.GetHeight, c)
+        lines[#lines + 1] = string.format("container %d : unit=%s shown=%s taille=%sx%s", i,
+            tostring(o1 and u), tostring(o2 and sh), tostring(o3 and w), tostring(o4 and h))
+    end
+    if #active == 0 then lines[#lines + 1] = "aucun container actif" end
+    return lines
+end
+
 function PIReq_EngineStats()
     return #soundIds, #active
 end
@@ -289,20 +307,27 @@ end
 -- ---------------------------------------------------------------------------
 
 function PIReq_EngineSync()
+    if PIReq.AlertsMuted() then
+        -- PI en recharge : on retire sons et icônes même en combat (pas de création).
+        ClearSounds()
+        ParkAll()
+        pendingSync = false
+        return
+    end
     if InCombatLockdown() then
         pendingSync = true -- retenté à PLAYER_REGEN_ENABLED
         return
     end
     pendingSync = false
-    local units = PIReq.TrackedUnits()
+    local units = PIReq.ActiveUnits()
     local soundsOk = RegisterSounds(units)
     SyncContainers(units)
     if not soundsOk then
         pendingSync = true
         -- Nouvel essai temporisé (3 max) sans attendre la fin d'un combat.
         retries = retries + 1
-        if retries <= 3 then
-            C_Timer.After(3, function()
+        if retries <= 10 then
+            C_Timer.After(5, function()
                 if pendingSync and PIReq.isPriest and PIReq.DB.enabled then PIReq_EngineSync() end
             end)
         end
