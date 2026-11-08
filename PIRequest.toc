@@ -1,9 +1,13 @@
-## Interface: 120005
+## Interface: 120105
 ## Title: PIRequest
-## Notes: Alerte le prêtre heal quand un DPS active un gros CD offensif ou une potion de burst (Power Infusion).
+## Notes: Alerte le prêtre heal quand un coéquipier DPS lance un CD offensif ou une potion de burst (Power Infusion). Filtre par personnage et choix des CDs.
 ## Author: amp
-## Version: 2.0.0
+## Version: 3.0.0
+## SavedVariables: PIRequestDB
 
+Data.lua
 Core.lua
-AuraWatcher.lua
 Highlighter.lua
+AuraWatcher.lua
+Engine.lua
+Options.lua

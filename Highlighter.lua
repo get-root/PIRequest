@@ -77,20 +77,26 @@ local function GetNotifFrame()
     subText:SetJustifyH("LEFT")
     subText:SetTextColor(1, 0.84, 0, 1)
     subText:SetText("CD offensif lancé — Power Infusion !")
+    f.subText = subText
 
     f:Hide()
     notifFrame = f
     return f
 end
 
-local function ShowNotification(playerName)
+local function ShowNotification(playerName, spellId, playSound)
     local ok, err = pcall(function()
         local f = GetNotifFrame()
         f.nameText:SetText(playerName)
+
+        -- Sort détecté (lisible uniquement hors contexte secret).
+        local spellName = spellId and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(spellId)
+        f.subText:SetText(spellName and (spellName .. " — Power Infusion !")
+                                     or "CD offensif lancé — Power Infusion !")
         f:SetAlpha(1)
         f:Show()
 
-        if PIReq.soundEnabled then
+        if playSound then
             PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
         end
 
@@ -166,9 +172,9 @@ local function RemoveHighlight(unitToken)
 end
 
 -- Crée ou rafraîchit le highlight sur le frame du joueur.
-function PIReq_Highlight(playerName)
+function PIReq_Highlight(playerName, spellId, playSound)
     -- Notification aura : toujours affichée, indépendamment du raid frame.
-    ShowNotification(playerName)
+    ShowNotification(playerName, spellId, playSound)
 
     local unitToken = FindUnitToken(playerName)
     if not unitToken then return end
