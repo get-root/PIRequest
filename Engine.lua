@@ -350,11 +350,9 @@ function PIReq_EngineSync()
         pendingSync = false
         return
     end
-    if InCombatLockdown() then
-        Log("sync reporté : en combat")
-        pendingSync = true -- retenté à PLAYER_REGEN_ENABLED
-        return
-    end
+    -- Pas de report en combat : la création de containers y est légale (12.1) et
+    -- sinon, quand PI redevient disponible en plein combat, on resterait sans son
+    -- ni icône jusqu'à la fin du combat. Un refus d'AddAuraSound est retenté.
     pendingSync = false
     local units = PIReq.ActiveUnits()
     Log(string.format("sync : unités=%d combat=%s secret=%s", #units,
@@ -374,6 +372,50 @@ function PIReq_EngineSync()
     else
         retries = 0
     end
+end
+
+-- Diagnostic /pirequest ctest [unit] [filtre] : affiche pendant 20 s un container
+-- SANS filtre de sort (ou avec, si "filtre") sur l'unité donnée (défaut : player).
+--  * affiche tes buffs  → le rendu du container fonctionne, le souci est le filtre/les sorts
+--  * n'affiche rien      → le rendu lui-même (initializeFrame / placement) est en cause
+local testContainer
+function PIReq_EngineContainerTest(unit, useFilter)
+    unit = (unit and unit ~= "") and unit or "player"
+    local f = EnsureTracker()
+    if not testContainer then
+        local ok, res = pcall(function()
+            if C_AddOns and C_AddOns.IsAddOnLoaded and not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
+                C_AddOns.LoadAddOn("Blizzard_AuraContainer")
+            end
+            local c = CreateFrame("AuraContainer", nil, f, "CustomAuraContainerTemplate")
+            c:SetSize(1, 1)
+            c:AddAuraGroup("test", "HELPFUL", {
+                maxFrameCount   = 8,
+                initializeFrame = MakeInitializer("test"),
+                layout          = { elementWidth = ICON, elementHeight = ICON, elementSpacing = 6, lineSpacing = 6 },
+            })
+            return c
+        end)
+        if not ok then Err("ctest : création impossible : " .. tostring(res)) return end
+        testContainer = res
+    end
+    local c = testContainer
+    local okF, eF = pcall(c.SetAuraGroupCandidateFilters, c, "test", useFilter and { includeSpellIDs = IncludeSet() } or {})
+    if not okF then Err("ctest : filtres : " .. tostring(eF)) end
+    pcall(c.ClearAllPoints, c)
+    pcall(c.SetPoint, c, "TOPLEFT", f, "BOTTOMLEFT", 0, -20)
+    pcall(c.Show, c)
+    pcall(c.SetEnabled, c, true)
+    local okS, eS = pcall(c.SetUnit, c, unit)
+    if not okS then Err("ctest : SetUnit : " .. tostring(eS)) return end
+    local _, w = pcall(c.GetWidth, c)
+    local _, h = pcall(c.GetHeight, c)
+    PIReq.Print(string.format("ctest : container sur %s (%s), taille %sx%s, 20 s. Buffs visibles sous le tracker ?",
+        unit, useFilter and "filtre CDs" or "tous les buffs", tostring(w), tostring(h)))
+    C_Timer.After(20, function()
+        pcall(c.SetUnit, c, NO_UNIT)
+        pcall(c.SetEnabled, c, false)
+    end)
 end
 
 function PIReq_EngineStop()

@@ -335,6 +335,10 @@ local function HandleSlash(msg)
             end
         end
 
+    elseif cmd == "ctest" then
+        local unit, flt = rest:match("^(%S*)%s*(%S*)$")
+        PIReq_EngineContainerTest(unit, flt == "filtre")
+
     elseif cmd == "resync" then
         -- Relance la synchro moteur en affichant chaque étape (diagnostic).
         PIReq_EngineVerbose(true)
@@ -401,7 +405,7 @@ local function HandleSlash(msg)
         PIReq.Refresh()
 
     else
-        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | resync | tracker | sound | toggle | enable | disable | debug")
+        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | resync | ctest | tracker | sound | toggle | enable | disable | debug")
     end
 end
 
