@@ -52,10 +52,84 @@ end
 local ROWS = 12
 local picker
 
+-- Catégories lisibles, d'après le 1er dossier du chemin du catalogue.
+local CATEGORIES = {
+    { key = "all",    label = "Tous" },
+    { key = "fav",    label = "Recommandés" },
+    { key = "addon",  label = "Addons" },
+    { key = "ui",     label = "Interface" },
+    { key = "event",  label = "Événements" },
+    { key = "fx",     label = "Effets" },
+    { key = "veh",    label = "Véhicules" },
+    { key = "foley",  label = "Bruitages" },
+}
+local FOLDER_CAT = {
+    interface = "ui", ui = "ui",
+    event = "event", events = "event", ["event sounds"] = "event",
+    effects = "fx", universal = "fx",
+    vehicles = "veh", foley = "foley",
+}
+
+-- "interface/ui_bnettoast" → "Bnettoast" (+ sous-dossier affiché à part en gris).
+-- Les noms de fichiers Blizzard n'ont pas d'espaces : on nettoie ce qui peut l'être.
+local function PrettyName(path)
+    local dir, base = path:match("^(.*)/([^/]+)$")
+    base = base or path
+    local name = base:gsub("[_%-%.]+", " "):gsub("^ui ", ""):gsub("^fx ", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    name = name:gsub(" %d%d%d%d%d%d+$", "")               -- identifiant de fichier en suffixe
+    name = name:gsub("^[%d ]+", "")                       -- préfixe de version ("10.0_", "70_")
+    name = name:gsub("(%a)(%d)", "%1 %2")                 -- "cheer1" → "cheer 1"
+    if name == "" then name = base end
+    name = name:sub(1, 1):upper() .. name:sub(2)
+    local sub = dir and dir:match("^[^/]+/(.+)$") or ""    -- sans le dossier racine
+    return name, sub
+end
+
+-- Sons partagés par les autres addons via LibSharedMedia (BigWigs, WeakAuras,
+-- SharedMedia…). Valeur = chemin de fichier ou FileDataID.
+local function SharedMediaSounds()
+    local out = {}
+    local lsm = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if not lsm then return out end
+    local ok, tbl = pcall(lsm.HashTable, lsm, "sound")
+    if not ok or type(tbl) ~= "table" then return out end
+    for name, value in pairs(tbl) do
+        local okV = (type(value) == "number" and value > 1) or (type(value) == "string" and value:find("[/\\]"))
+        if okV and name ~= "None" then
+            out[#out + 1] = { label = name, sub = "addon", cat = "addon", value = value,
+                              search = (name .. " addon"):lower() }
+        end
+    end
+    table.sort(out, function(a, b) return a.label:lower() < b.label:lower() end)
+    return out
+end
+
+local catalogItems -- construit une seule fois (1200 entrées)
+local function BuildItems()
+    if not catalogItems then
+        catalogItems = {}
+        for _, e in ipairs(PIReq.SOUND_CATALOG) do
+            local name, sub = PrettyName(e[2])
+            local root = e[2]:match("^([^/]*)/") or ""
+            catalogItems[#catalogItems + 1] = { label = name, sub = sub, cat = FOLDER_CAT[root] or "fx",
+                                                value = e[1], search = e[2]:lower() .. " " .. name:lower() }
+        end
+    end
+    local items = {}
+    for _, s in ipairs(PIReq.SOUNDS) do
+        items[#items + 1] = { label = s.label, sub = "recommandé", cat = "fav", preset = s.key,
+                              search = s.label:lower() }
+    end
+    for _, it in ipairs(SharedMediaSounds()) do items[#items + 1] = it end
+    for _, it in ipairs(catalogItems) do items[#items + 1] = it end
+    return items
+end
+
 local function CurrentSoundLabel()
     local db = PIReq.DB
     if db.soundKey == "custom" then
-        return db.soundName or ("FileDataID " .. tostring(db.soundCustom))
+        if db.soundName then return db.soundName end
+        return (type(db.soundCustom) == "number" and "FileDataID " or "") .. tostring(db.soundCustom)
     end
     for _, s in ipairs(PIReq.SOUNDS) do
         if s.key == db.soundKey then return s.label end
@@ -64,14 +138,13 @@ local function CurrentSoundLabel()
 end
 
 local function OpenSoundPicker()
-    if picker then picker:Show() return end
-    local cat = PIReq.SOUND_CATALOG
-    local lower = {}
-    for i, e in ipairs(cat) do lower[i] = e[2]:lower() end
+    if picker then picker.Reload(); picker:Show() return end
+    local items = {}
+    local currentCat = "all"
 
     local f = CreateFrame("Frame", "PIReqSoundPicker", UIParent, "BackdropTemplate")
     picker = f
-    f:SetSize(460, 40 + ROWS * 22 + 70)
+    f:SetSize(520, 122 + ROWS * 22 + 50)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
@@ -84,18 +157,18 @@ local function OpenSoundPicker()
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", 0, -16)
-    title:SetText("Choisir un son (" .. #cat .. " sons du jeu)")
+    title:SetText("Choisir un son")
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
 
     local search = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
-    search:SetPoint("TOPLEFT", 24, -44)
-    search:SetSize(400, 22)
+    search:SetPoint("TOPLEFT", 28, -92)
+    search:SetSize(464, 22)
     search:SetAutoFocus(false)
 
     local filtered, page = {}, 1
-    local rows = {}
+    local rows, catButtons = {}, {}
     local info = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     info:SetPoint("BOTTOM", 0, 20)
 
@@ -103,57 +176,91 @@ local function OpenSoundPicker()
         wipe(filtered)
         local terms = {}
         for t in (search:GetText() or ""):lower():gmatch("%S+") do terms[#terms + 1] = t end
-        for i = 1, #cat do
-            local ok = true
-            for _, t in ipairs(terms) do
-                if not lower[i]:find(t, 1, true) then ok = false break end
+        for i, it in ipairs(items) do
+            local ok = currentCat == "all" or it.cat == currentCat
+            if ok then
+                for _, t in ipairs(terms) do
+                    if not it.search:find(t, 1, true) then ok = false break end
+                end
             end
             if ok then filtered[#filtered + 1] = i end
         end
         page = 1
     end
 
+    local function IsSelected(it)
+        local db = PIReq.DB
+        if it.preset then return db.soundKey == it.preset end
+        return db.soundKey == "custom" and db.soundCustom == it.value
+    end
+
     local function Render()
         local pages = math.max(1, math.ceil(#filtered / ROWS))
         if page > pages then page = pages end
         if page < 1 then page = 1 end
-        local db = PIReq.DB
         for r = 1, ROWS do
-            local idx = filtered[(page - 1) * ROWS + r]
+            local it = items[filtered[(page - 1) * ROWS + r]]
             local row = rows[r]
-            if idx then
-                local e = cat[idx]
-                row.entry = e
-                row.text:SetText(e[2])
-                row.sel:SetShown(db.soundKey == "custom" and db.soundCustom == e[1])
+            row.item = it
+            if it then
+                row.text:SetText(it.label)
+                row.sub:SetText(it.sub or "")
+                row.sel:SetShown(IsSelected(it))
                 row:Show()
             else
-                row.entry = nil
                 row:Hide()
             end
         end
-        info:SetText(string.format("%d résultat(s) — page %d/%d — clic = écouter et choisir", #filtered, page, pages))
+        for _, b in ipairs(catButtons) do
+            if b.key == currentCat then b:LockHighlight() else b:UnlockHighlight() end
+        end
+        if #filtered == 0 and currentCat == "addon" then
+            info:SetText("Aucun son d'addon trouvé (nécessite un addon fournissant LibSharedMedia).")
+        else
+            info:SetText(string.format("%d son(s) — page %d/%d — clic = écouter et choisir", #filtered, page, pages))
+        end
+    end
+
+    -- Boutons de catégorie (2 lignes de 4).
+    for i, c in ipairs(CATEGORIES) do
+        local b = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+        b:SetSize(114, 22)
+        b:SetPoint("TOPLEFT", 28 + ((i - 1) % 4) * 117, -40 - math.floor((i - 1) / 4) * 24)
+        b:SetText(c.label)
+        b.key = c.key
+        b:SetScript("OnClick", function() currentCat = c.key; Refilter(); Render() end)
+        catButtons[i] = b
     end
 
     for r = 1, ROWS do
         local row = CreateFrame("Button", nil, f)
-        row:SetSize(420, 20)
-        row:SetPoint("TOPLEFT", 24, -74 - (r - 1) * 22)
+        row:SetSize(464, 20)
+        row:SetPoint("TOPLEFT", 28, -120 - (r - 1) * 22)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         row.sel = row:CreateTexture(nil, "BACKGROUND")
         row.sel:SetAllPoints()
         row.sel:SetColorTexture(1, 0.84, 0, 0.25)
+        row.sub = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        row.sub:SetPoint("RIGHT", -4, 0)
+        row.sub:SetWidth(170)
+        row.sub:SetJustifyH("RIGHT")
+        row.sub:SetWordWrap(false)
         row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         row.text:SetPoint("LEFT", 4, 0)
-        row.text:SetPoint("RIGHT", -4, 0)
+        row.text:SetPoint("RIGHT", row.sub, "LEFT", -6, 0)
         row.text:SetJustifyH("LEFT")
+        row.text:SetWordWrap(false)
         row:SetScript("OnClick", function(self)
-            local e = self.entry
-            if not e then return end
+            local it = self.item
+            if not it then return end
             local db = PIReq.DB
-            db.soundKey, db.soundCustom, db.soundName = "custom", e[1], e[2]
+            if it.preset then
+                db.soundKey, db.soundName = it.preset, nil
+            else
+                db.soundKey, db.soundCustom, db.soundName = "custom", it.value, it.label
+            end
             PIReq.PlayAlertSound()
-            PIReq.Refresh()          -- ré-enregistre les sons moteur avec ce FileDataID
+            PIReq.Refresh()          -- ré-enregistre les sons moteur avec ce son
             PIReq.RefreshOptions()
             Render()
         end)
@@ -174,8 +281,14 @@ local function OpenSoundPicker()
     search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
+    -- Relit la liste à chaque ouverture : un addon a pu enregistrer ses sons depuis.
+    function f.Reload()
+        items = BuildItems()
+        Refilter(); Render()
+    end
+
     tinsert(UISpecialFrames, "PIReqSoundPicker") -- Échap ferme
-    Refilter(); Render()
+    f.Reload()
 end
 
 local function Build()
@@ -237,8 +350,14 @@ local function Build()
         function(v) db.enabled = v; PIReq.Refresh() end); y = y - 26
     Checkbox("Son d'alerte", 8, y, function() return db.sound end,
         function(v) db.sound = v; PIReq.Refresh() end); y = y - 26
-    Checkbox("Masquer les alertes pendant la recharge de Power Infusion (2 min)", 8, y, function() return db.hideOnCooldown end,
+    Checkbox("Masquer les alertes pendant la recharge de Power Infusion", 8, y, function() return db.hideOnCooldown end,
         function(v) db.hideOnCooldown = v; PIReq.Refresh() end); y = y - 26
+    Text("GameFontHighlight", "Réarmer les alertes", 38, y - 5)
+    local leadBox = EditBox(180, y - 1, 36, function(text) PIReq.SetPILead(text); PIReq.RefreshOptions() end)
+    leadBox:SetNumeric(true); leadBox:SetMaxLetters(2)
+    refreshers[#refreshers + 1] = function() leadBox:SetText(tostring(PIReq.PILead())) end
+    Text("GameFontHighlight", "s avant la fin de la recharge (0 à 60, Entrée pour valider)", 222, y - 5)
+    y = y - 28
     Checkbox("Icônes de CD en combat / donjon (tracker déplaçable)", 8, y, function() return db.tracker end,
         function(v) db.tracker = v; PIReq.Refresh() end)
     Button("Déplacer le tracker", 380, y - 2, 150, function() PIReq_ToggleTrackerUnlock() end)
@@ -269,7 +388,7 @@ local function Build()
     Checkbox("Personnalisé (FileDataID) :", 8, y,
         function() return db.soundKey == "custom" end,
         function(v)
-            if v and tonumber(db.soundCustom) then
+            if v and db.soundCustom then
                 db.soundKey = "custom"; PIReq.PlayAlertSound(); PIReq.Refresh()
             end
             PIReq.RefreshOptions()
@@ -277,15 +396,15 @@ local function Build()
     local customSound = EditBox(240, y - 2, 110, function(text)
         local n = tonumber(text)
         if n then
-            db.soundCustom = n; db.soundKey = "custom"
+            db.soundCustom = n; db.soundKey = "custom"; db.soundName = nil
             PIReq.PlayAlertSound(); PIReq.Refresh()
         end
         PIReq.RefreshOptions()
     end)
     customSound:SetNumeric(true)
-    refreshers[#refreshers + 1] = function() customSound:SetText(db.soundCustom and tostring(db.soundCustom) or "") end
+    refreshers[#refreshers + 1] = function() customSound:SetText(type(db.soundCustom) == "number" and tostring(db.soundCustom) or "") end
     y = y - 26
-    Text("GameFontDisableSmall", "Entrée pour valider. Les FileDataID se trouvent sur wago.tools/files (sons .ogg/.mp3).", 16, y)
+    Text("GameFontDisableSmall", "« Tous les sons… » liste aussi les sons des autres addons. FileDataID : wago.tools/files, puis Entrée.", 16, y)
     y = y - 30
 
     -- Filtre par nom --------------------------------------------------------

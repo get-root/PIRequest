@@ -4,12 +4,12 @@
 ## Author: amp
 ## Version: 3.0.0
 ## SavedVariables: PIRequestDB
+## OptionalDeps: LibSharedMedia-3.0, SharedMedia
 
 Data.lua
 SoundCatalog.lua
 Core.lua
 Highlighter.lua
 AuraWatcher.lua
-Poller.lua
 Engine.lua
 Options.lua

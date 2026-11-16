@@ -51,15 +51,32 @@ réservés » : **ne rien copier** (ni code ni listes).
 ### Pièges connus
 - `UnitName`/`GetUnitName` peuvent être secrets : `PIReq.UnitShortName` garde un cache.
 - `UNIT_SPELLCAST_SUCCEEDED` inutilisable pour les autres joueurs.
-- `AddAuraSound` / création de containers : appels potentiellement refusés en
-  combat → `pendingSync` retenté à `PLAYER_REGEN_ENABLED`.
+- `AddAuraSound` : pas de report en combat (sinon plus de son quand PI revient en
+  plein combat) ; un refus est retenté 10 × toutes les 5 s (`pendingSync`).
+- Le bouton `CustomAuraButtonTemplate` n'a **aucune taille** et le flow layout ne
+  fait que le positionner : `button:SetSize` obligatoire dans `initializeFrame`
+  (sinon bouton 0×0, rien de dessiné). `initializeFrame` passe par
+  `securecallfunction` : erreurs avalées → on les `pcall` et on les journalise.
+- Un container n'écoute `UNIT_AURA` que s'il est visible ET `SetEnabled(true)`.
+- Sons moteur limités à 300 (unités × sorts) : on n'enregistre par joueur que les
+  CDs de **sa classe** (+ potions + IDs perso), et on ne ré-enregistre que si la
+  signature (unités/classes, sorts, son) a changé.
 - Ne jamais comparer/itérer une valeur sans `issecretvalue()` d'abord.
 - Sons : `PlaySound` prend un **SoundKit**, `AddAuraSound` un **FileDataID** (≠ !).
   `PIReq.SOUNDS` (Data.lua) porte les deux ; `PIReq.GetSound()` / `PlayAlertSound()`.
-  Choix dans les options (`soundKey`, ou `custom` + `soundCustom` = FileDataID).
-- ⚠️ Code **non testé en jeu** (écrit sans client) : à valider avec
-  `/pirequest scan` et `/pirequest debug` — notamment sons parasites à l'entrée
-  d'une instance (aura « Added » initiale) et rendu des icônes.
+  Choix dans les options (`soundKey`, ou `custom` + `soundCustom` = FileDataID
+  **ou chemin de fichier** → `soundFileName`, pour les sons d'addons).
+  Sélecteur (`Options.lua`) : presets + LibSharedMedia (`HashTable("sound")`) +
+  `SoundCatalog.lua` (1200 sons du jeu), par catégories, noms nettoyés.
+- Recharge de PI (`hideOnCooldown`) : PI détectée par `UNIT_SPELLCAST_SUCCEEDED`
+  du joueur ; sons et icônes retirés pendant la recharge puis **réarmés `piLead`
+  secondes avant la fin** (défaut 10 → 1 min 50). Ne pas couper 120 s pleines :
+  le DPS relance son CD de 2 min avant que PI soit revenue, et le son moteur ne
+  part qu'à l'AJOUT de l'aura.
+- `GetUnitAuraBySpellID` ne marche pas pour ces CDs en contexte secret (tous
+  « secrets selon contexte ») : le sondage (ancien `Poller.lua`) a été supprimé.
+- ⚠️ Code écrit **sans client** : le son moteur est confirmé en M+ ; le rendu
+  des icônes reste à valider (`/pirequest ctest`, `/pirequest scan`).
 
 ---
 
@@ -77,8 +94,9 @@ réservés » : **ne rien copier** (ni code ni listes).
 
 ```
 PIRequest.toc    ← Interface 120105, SavedVariables PIRequestDB
-Data.lua         ← liste des CDs offensifs + potions (par classe)
-Core.lua         ← DB, IsRestricted, filtres nom/rôle, slash commands
+Data.lua         ← liste des CDs offensifs + potions (par classe), sons recommandés
+SoundCatalog.lua ← 1200 sons du jeu { FileDataID, "dossier/nom" } (généré)
+Core.lua         ← DB, IsRestricted, filtres nom/rôle, recharge PI, slash commands
 Highlighter.lua  ← bannière + highlight raid frame + son (chemin lisible)
 AuraWatcher.lua  ← chemin lisible (UNIT_AURA)
 Engine.lua       ← chemin secret (AddAuraSound + AuraContainer + tracker)
@@ -87,6 +105,11 @@ Options.lua      ← panneau d'options (Settings canvas)
 
 ## Commandes slash
 `config | only <noms>|off | add/remove <id> | tracker | test | status | scan | sound | toggle | enable | disable | debug`
+
+Diagnostic : `auras [unité]` (buffs lisibles + spellId, hors combat, pour trouver
+l'ID réel d'un CD) · `secrecy` (niveau de secret de chaque CD) · `resync`
+(resynchro moteur détaillée) · `ctest [unité] [filtre]` (container de test 20 s).
+`scan` affiche aussi le journal du moteur (30 dernières lignes).
 
 ---
 

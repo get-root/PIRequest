@@ -37,6 +37,8 @@ Options: `Esc > Options > AddOns > PIRequest` or `/pirequest config`.
 /pirequest status            — state, secret-aura status, name filter
 /pirequest scan              — watched units, active spell IDs, engine sounds/icons
 /pirequest sound | toggle | enable | disable | debug
+/pirequest auras [unit]      — list readable buffs + spell IDs (out of combat) to find a CD's real aura ID
+/pirequest secrecy | resync | ctest [unit] [filtre]   — engine diagnostics
 ```
 
 ## Compatibility
@@ -51,3 +53,9 @@ The AuraContainer-by-spellId technique was learned from reading how EllesmereUI 
 ## License
 
 MIT
+
+## Sound & Power Infusion cooldown
+
+- **Sound picker** (options → *Tous les sons…*): recommended sounds, sounds shared by other addons through LibSharedMedia (BigWigs, WeakAuras, SharedMedia…), and ~1200 game sounds grouped by category. A raw FileDataID can still be typed in.
+- **Muted while Power Infusion is on cooldown** (optional): alerts are re-armed a few seconds before PI is ready (10 s by default, configurable), so a DPS re-using a 2-minute cooldown right on time is not missed.
+- In raid, engine sounds are registered per player for their own class's cooldowns only (plus potions and custom IDs).

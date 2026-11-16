@@ -22,6 +22,7 @@ local DEFAULTS = {
     soundCustom  = nil,    -- FileDataID si soundKey == "custom"
     tracker      = true,   -- icônes moteur (mode secret)
     hideOnCooldown = true, -- pas d'alerte pendant la recharge de Power Infusion
+    piLead       = 10,     -- secondes : alertes réarmées avant la fin de la recharge
     priorityOnly = false,  -- seulement les CDs ★ (priorité haute)
     filterByName = false,  -- limiter aux personnages de `names`
     names        = {},     -- { "Nom1", "Nom2" }
@@ -139,14 +140,25 @@ end
 
 local PI_SPELL_ID  = 10060
 local PI_COOLDOWN  = 120   -- secondes (2 min), utilisé si la vraie durée est illisible
+-- Secondes avant la fin de la recharge où l'on réarme (réglable, 0 à 60).
+local function Lead()
+    local v = PIReq.DB and tonumber(PIReq.DB.piLead) or 10
+    return math.min(60, math.max(0, v))
+end
+PIReq.PILead = Lead
 local piReadyAt    = 0
 
 function PIReq.PIOnCooldown()
     return GetTime() < piReadyAt
 end
 
+-- Alertes coupées pendant la recharge de PI, SAUF les dernières secondes
+-- (10 par défaut, soit 1 min 50). Un DPS relance son CD de 2 min pile 120 s après le précédent,
+-- alors que PI est partie 1-2 s après lui : en coupant 120 s pleines, le son
+-- moteur (déclenché uniquement à l'AJOUT de l'aura) était raté un cycle sur deux.
 function PIReq.AlertsMuted()
-    return PIReq.DB and PIReq.DB.hideOnCooldown and PIReq.PIOnCooldown() or false
+    if not (PIReq.DB and PIReq.DB.hideOnCooldown) then return false end
+    return GetTime() < piReadyAt - Lead()
 end
 
 -- Units réellement surveillées maintenant (aucune pendant la recharge de PI).
@@ -156,9 +168,16 @@ function PIReq.ActiveUnits()
 end
 
 local function ScheduleReady(delay)
-    C_Timer.After(delay + 0.2, function()
-        if GetTime() >= piReadyAt then PIReq.Refresh() end  -- PI de nouveau dispo : on réarme
+    C_Timer.After(math.max(0, delay - Lead()) + 0.2, function()
+        if not PIReq.AlertsMuted() then PIReq.Refresh() end  -- PI bientôt dispo : on réarme
     end)
+end
+
+-- Changement du délai depuis les options : on recale le réarmement en cours.
+function PIReq.SetPILead(v)
+    PIReq.DB.piLead = math.min(60, math.max(0, tonumber(v) or 10))
+    if PIReq.PIOnCooldown() then ScheduleReady(piReadyAt - GetTime()) end
+    PIReq.Refresh()
 end
 
 -- Relit la vraie recharge (/reload en pleine recharge). Les champs peuvent être
@@ -185,7 +204,7 @@ local function OnPICast()
         end
     end
     piReadyAt = GetTime() + dur
-    if PIReq.debugMode then PIReq.Print(string.format("PI lancée : alertes coupées %ds", dur)) end
+    if PIReq.debugMode then PIReq.Print(string.format("PI lancée : alertes coupées %ds", dur - Lead())) end
     PIReq.Refresh()
     ScheduleReady(dur)
 end
@@ -194,12 +213,15 @@ end
 -- Son d'alerte
 -- ---------------------------------------------------------------------------
 
--- Retourne (soundKit, fileDataID) du son choisi. Le son personnalisé n'a qu'un
--- FileDataID (kit = nil).
+-- Retourne (soundKit, fichier) du son choisi. `fichier` est un FileDataID
+-- (nombre) ou un chemin (chaîne : son fourni par un autre addon). Le son
+-- personnalisé n'a pas de kit.
 function PIReq.GetSound()
     local db = PIReq.DB
-    if db.soundKey == "custom" and tonumber(db.soundCustom) then
-        return nil, tonumber(db.soundCustom)
+    if db.soundKey == "custom" then
+        local c = db.soundCustom
+        if tonumber(c) then return nil, tonumber(c) end
+        if type(c) == "string" and c ~= "" then return nil, c end  -- chemin (son d'addon)
     end
     for _, s in ipairs(PIReq.SOUNDS) do
         if s.key == db.soundKey then return s.kit, s.file end
@@ -225,18 +247,21 @@ function PIReq.IsEntryEnabled(entry)
 end
 
 function PIReq.RebuildSpellSet()
-    local set = {}
+    local set, classOf = {}, {}
     for _, entry in ipairs(PIReq.SPELLS) do
         local prioOk = not PIReq.DB.priorityOnly or entry.priority or entry.class == "POTION"
         if prioOk and PIReq.IsEntryEnabled(entry) then
             set[entry.id] = true
-            for _, alt in ipairs(entry.alts or {}) do set[alt] = true end
+            classOf[entry.id] = entry.class
+            for _, alt in ipairs(entry.alts or {}) do set[alt] = true; classOf[alt] = entry.class end
         end
     end
     for id, on in pairs(PIReq.DB.custom) do
-        if on then set[id] = true end
+        if on then set[id] = true; classOf[id] = nil end  -- ID perso : toutes classes
     end
     PIReq.spellSet = set
+    PIReq.spellClass = classOf   -- [spellId] = classe (nil = toutes), cf. sons moteur
+    PIReq.spellSetVersion = (PIReq.spellSetVersion or 0) + 1
 end
 
 -- À appeler après tout changement de configuration (options, slash).
@@ -262,11 +287,9 @@ function PIReq.Refresh()
     if PIReq.isPriest and PIReq.DB.enabled then
         PIReq_StartWatching()
         PIReq_EngineSync()
-        PIReq_PollerSync()
     else
         PIReq_StopWatching()
         PIReq_EngineStop()
-        PIReq_PollerSync()
     end
 end
 
@@ -334,6 +357,28 @@ local function HandleSlash(msg)
                 end
             end
         end
+
+    elseif cmd == "auras" then
+        -- Liste les buffs LISIBLES d'une unité avec leur spellId : sert à trouver
+        -- l'ID réel du buff d'un CD qui ne sonne jamais (puis /pirequest add <id>).
+        local unit = rest ~= "" and rest or (UnitExists("target") and "target" or "player")
+        if PIReq.IsRestricted() then
+            print_("Auras secrètes en ce moment (combat/donjon) : à faire hors combat, hors instance.")
+            return
+        end
+        print_("Buffs de " .. tostring(PIReq.UnitShortName(unit) or unit) .. " (|cff00ff00vert|r = déjà surveillé) :")
+        local shown = 0
+        for i = 1, 60 do
+            local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
+            if not ok or a == nil or issecret(a) then break end
+            local id, name = a.spellId, a.name
+            if id and not issecret(id) then
+                print_(string.format("  %s%d|r  %s", PIReq.spellSet[id] and "|cff00ff00" or "|cffffffff",
+                    id, (not issecret(name) and name) or "?"))
+                shown = shown + 1
+            end
+        end
+        if shown == 0 then print_("  aucun buff lisible.") end
 
     elseif cmd == "ctest" then
         local unit, flt = rest:match("^(%S*)%s*(%S*)$")
@@ -405,7 +450,7 @@ local function HandleSlash(msg)
         PIReq.Refresh()
 
     else
-        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | secrecy | resync | ctest | tracker | sound | toggle | enable | disable | debug")
+        print_("Commandes : config | test | status | scan | only <noms>|off | add <id> | remove <id> | auras [unité] | secrecy | resync | ctest | tracker | sound | toggle | enable | disable | debug")
     end
 end
 

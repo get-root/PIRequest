@@ -21,6 +21,7 @@ local GAP         = 30    -- place pour le nom sous l'icône
 local NO_UNIT     = "none"
 local GROUP_KEY   = "pirequest"
 
+local soundSig            -- signature du dernier enregistrement de sons réussi
 local soundIds      = {}
 local pool          = {}  -- [unit.."|"..name] = container
 local active        = {}  -- containers actuellement assignés
@@ -88,13 +89,33 @@ local function ClearSounds()
         for _, id in ipairs(soundIds) do pcall(C_UnitAuras.RemoveAuraSound, id) end
     end
     wipe(soundIds)
+    soundSig = nil
     PIReq.engineSoundActive = false
 end
 
 -- Retourne false si au moins un enregistrement a été refusé (à retenter plus tard).
+local issecret = issecretvalue or function() return false end
+
+-- Classe d'une unité (nil si illisible → on enregistre alors tous les sorts).
+local function UnitClassFile(unit)
+    local ok, _, class = pcall(UnitClass, unit)
+    if ok and type(class) == "string" and not issecret(class) then return class end
+    return nil
+end
+
 local function RegisterSounds(units)
+    -- Rien n'a changé (mêmes unités/classes, mêmes sorts, même son) : on garde
+    -- les sons en place. Évite de tout retirer/remettre à chaque
+    -- GROUP_ROSTER_UPDATE, très fréquent en raid.
+    local _, sigFile = PIReq.GetSound()
+    local parts = { tostring(PIReq.DB.sound), tostring(sigFile), tostring(PIReq.spellSetVersion) }
+    for _, unit in ipairs(units) do parts[#parts + 1] = unit .. ":" .. tostring(UnitClassFile(unit)) end
+    local sig = table.concat(parts, "|")
+    if sig == soundSig and (#soundIds > 0 or not PIReq.DB.sound) then return true end
+    soundSig = nil
+
     ClearSounds()
-    if not PIReq.DB.sound then return true end
+    if not PIReq.DB.sound then soundSig = sig return true end
     if not (C_UnitAuras and C_UnitAuras.AddAuraSound) then
         Err("C_UnitAuras.AddAuraSound indisponible : pas de son en combat/donjon.")
         return true
@@ -104,31 +125,38 @@ local function RegisterSounds(units)
     local failed = false
     local _, soundFile = PIReq.GetSound()
     for _, unit in ipairs(units) do
+        local unitClass = UnitClassFile(unit)
         for spellId in pairs(PIReq.spellSet) do
-            if #soundIds >= MAX_SOUNDS then
+            -- Seulement les CDs de la classe du joueur (+ potions et IDs perso) :
+            -- ~10 sons par joueur au lieu de ~45, sinon la limite est atteinte
+            -- dès 6-7 DPS et les suivants n'ont aucun son.
+            local cls = PIReq.spellClass and PIReq.spellClass[spellId]
+            local wanted = not (cls and cls ~= "POTION" and unitClass and cls ~= unitClass)
+            if wanted and #soundIds >= MAX_SOUNDS then
                 Err("trop de sons moteur (" .. MAX_SOUNDS .. "), liste tronquée : utilise le filtre par nom.")
                 PIReq.engineSoundActive = #soundIds > 0
                 return true
             end
-            local ok, id = pcall(C_UnitAuras.AddAuraSound, trigger, {
-                unitToken       = unit,
-                spellID         = spellId,
-                soundFileID     = soundFile, -- FileDataID (≠ SoundKit)
-                outputChannel   = "Master",
-                throttleSeconds = 5,
-            })
-            if ok and id then
-                soundIds[#soundIds + 1] = id
-            else
-                failed = true
-                -- Visible une fois par session (sinon l'échec est silencieux et
-                -- l'utilisateur n'entend simplement jamais rien).
-                Err("AddAuraSound refusé (" .. unit .. " / " .. spellId .. ") : " .. tostring(id)
-                    .. " — nouvel essai automatique.")
+            if wanted then
+                -- FileDataID (≠ SoundKit) ou chemin de fichier (son d'un addon).
+                local info = { unitToken = unit, spellID = spellId, outputChannel = "Master", throttleSeconds = 5 }
+                if type(soundFile) == "string" then info.soundFileName = soundFile
+                else info.soundFileID = soundFile end
+                local ok, id = pcall(C_UnitAuras.AddAuraSound, trigger, info)
+                if ok and id then
+                    soundIds[#soundIds + 1] = id
+                else
+                    failed = true
+                    -- Visible une fois par session (sinon l'échec est silencieux et
+                    -- l'utilisateur n'entend simplement jamais rien).
+                    Err("AddAuraSound refusé (" .. unit .. " / " .. spellId .. ") : " .. tostring(id)
+                        .. " — nouvel essai automatique.")
+                end
             end
         end
     end
     PIReq.engineSoundActive = #soundIds > 0
+    if not failed then soundSig = sig end
     return not failed
 end
 
@@ -231,7 +259,11 @@ local function IncludeSet()
 end
 
 local function MakeInitializer(name)
-    return function(button)
+    local function init(button)
+        -- CustomAuraButtonTemplate n'a AUCUNE taille et le flow layout du moteur
+        -- ne fait que positionner (elementWidth/Height servent au calcul, pas au
+        -- SetSize) : sans ceci le bouton fait 0×0 et rien n'est dessiné.
+        button:SetSize(ICON, ICON)
         pcall(button.SetMouseClickEnabled, button, false)
 
         local border = button:CreateTexture(nil, "BACKGROUND")
@@ -253,6 +285,12 @@ local function MakeInitializer(name)
         -- Enregistrer les régions APRÈS leur création/stylage (cf. moteur).
         button:SetIcon(icon)
         button:SetDurationCooldown(cd)
+    end
+    -- Le moteur appelle l'initialiseur via securecallfunction : une erreur y
+    -- serait avalée sans bruit. On la journalise.
+    return function(button)
+        local ok, err = pcall(init, button)
+        if not ok then Err("initialisation de l'icône : " .. tostring(err)) end
     end
 end
 
