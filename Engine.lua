@@ -25,6 +25,7 @@ local soundSig            -- signature du dernier enregistrement de sons réussi
 local soundIds      = {}
 local pool          = {}  -- [unit.."|"..name] = container
 local active        = {}  -- containers actuellement assignés
+local cstate        = {}  -- [container] = "rang:versionSorts" quand il est posé
 local tracker, unlocked
 local pendingSync   = false
 local retryTimer    = false
@@ -341,68 +342,77 @@ end
 
 local function ParkAll()
     for _, c in ipairs(active) do
+        cstate[c] = nil
         pcall(c.SetUnit, c, NO_UNIT)
         if c.SetEnabled then pcall(c.SetEnabled, c, false) end
     end
     wipe(active)
 end
 
+-- Idempotent : un container déjà posé sur la bonne unité n'est PAS retouché.
+-- Avant, chaque synchro (GROUP_ROSTER_UPDATE, très fréquent) faisait
+-- SetUnit("none") / SetEnabled(false) puis l'inverse, y compris en contexte
+-- secret où ces manipulations depuis du code addon sont fragiles.
 local function SyncContainers(units)
-    ParkAll()
-    Log(string.format("containers : unités=%d tracker=%s sorts=%s",
-        #units, tostring(PIReq.DB.tracker), tostring(next(PIReq.spellSet) ~= nil)))
-    if not PIReq.DB.tracker or #units == 0 or next(PIReq.spellSet) == nil then
-        return
-    end
-    local f = EnsureTracker()
-    for i, unit in ipairs(units) do
-        if i > MAX_ROWS then break end
-        local name = PIReq.UnitShortName(unit) or unit
-        local key  = unit .. "|" .. name
-        local c = pool[key]
-        if not c then
-            local ok, res = pcall(CreateRowContainer, unit, name)
-            if ok then
-                c = res
-                pool[key] = c
-                Log("container créé pour " .. unit .. " (" .. name .. ")")
-            else
-                Err("création du container impossible (" .. unit .. ") : " .. tostring(res))
+    local want = PIReq.DB.tracker and next(PIReq.spellSet) ~= nil
+    local keep, f = {}, nil
+    if want and #units > 0 then
+        f = EnsureTracker()
+        for i, unit in ipairs(units) do
+            if i > MAX_ROWS then break end
+            local name = PIReq.UnitShortName(unit) or unit
+            local key  = unit .. "|" .. name
+            local c = pool[key]
+            if not c then
+                local ok, res = pcall(CreateRowContainer, unit, name)
+                if ok then
+                    c = res
+                    pool[key] = c
+                    Log("container créé pour " .. unit .. " (" .. name .. ")")
+                else
+                    Err("création du container impossible (" .. unit .. ") : " .. tostring(res))
+                end
+            end
+            if c then
+                keep[c] = true
+                local state = i .. ":" .. tostring(PIReq.spellSetVersion)
+                if cstate[c] ~= state then
+                    local okAll = true
+                    local function try(label, fn, ...)
+                        local ok, e = pcall(fn, ...)
+                        if not ok then okAll = false; Err(label .. " (" .. unit .. ") : " .. tostring(e)) end
+                    end
+                    try("SetPoint", function()
+                        c:ClearAllPoints()
+                        c:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -(i - 1) * (ICON + GAP))
+                        c:Show()
+                    end)
+                    try("SetAuraGroupCandidateFilters", c.SetAuraGroupCandidateFilters, c, GROUP_KEY, { includeSpellIDs = IncludeSet() })
+                    -- Un AuraContainer n'écoute UNIT_AURA que s'il est VISIBLE ET ACTIVÉ.
+                    try("SetEnabled", c.SetEnabled, c, true)
+                    try("SetUnit", c.SetUnit, c, unit)
+                    if okAll then cstate[c] = state end
+                    local o1, en  = pcall(c.IsEnabled, c)
+                    local o2, vis = pcall(c.IsVisible, c)
+                    local o3, u   = pcall(c.GetUnit, c)
+                    Log(string.format("%s : posé ok=%s enabled=%s visible=%s unit=%s", unit, tostring(okAll),
+                        tostring(o1 and en), tostring(o2 and vis), tostring(o3 and u)))
+                end
             end
         end
-        if c then
-            pcall(c.ClearAllPoints, c)
-            pcall(c.SetPoint, c, "TOPLEFT", f, "TOPLEFT", 0, -(i - 1) * (ICON + GAP))
-            pcall(c.Show, c)
-            -- Filtre à jour (la sélection de sorts a pu changer).
-            if c.SetAuraGroupCandidateFilters then
-                local okF, eF = pcall(c.SetAuraGroupCandidateFilters, c, GROUP_KEY, { includeSpellIDs = IncludeSet() })
-                if not okF then Err("SetAuraGroupCandidateFilters : " .. tostring(eF)) end
-            end
-            -- Un AuraContainer n'écoute UNIT_AURA que s'il est VISIBLE ET ACTIVÉ
-            -- (IsVisible() and IsEnabled()) ; SetEnabled/SetUnit relancent eux-mêmes
-            -- le rafraîchissement. UpdateAllAuras n'est qu'un filet : son échec
-            -- ne doit pas écarter le container.
-            if c.SetEnabled then
-                local okE, eE = pcall(c.SetEnabled, c, true)
-                if not okE then Err("SetEnabled : " .. tostring(eE)) end
-            end
-            local okS, eS = pcall(c.SetUnit, c, unit)
-            if not okS then Err("SetUnit(" .. unit .. ") : " .. tostring(eS)) end
-            if okS and c.UpdateAllAuras then
-                local okU, eU = pcall(c.UpdateAllAuras, c)
-                if not okU then Log("UpdateAllAuras (non bloquant) : " .. tostring(eU)) end
-            end
-            if okS then active[#active + 1] = c end
-
-            local o1, en  = pcall(c.IsEnabled, c)
-            local o2, vis = pcall(c.IsVisible, c)
-            local o3, u   = pcall(c.GetUnit, c)
-            Log(string.format("%s : enabled=%s visible=%s unit=%s", unit,
-                tostring(o1 and en), tostring(o2 and vis), tostring(o3 and u)))
+        f:SetHeight(math.max(1, math.min(#units, MAX_ROWS)) * (ICON + GAP))
+    end
+    -- Retire uniquement les containers devenus inutiles.
+    wipe(active)
+    for _, c in pairs(pool) do
+        if keep[c] then
+            active[#active + 1] = c
+        elseif cstate[c] then
+            cstate[c] = nil
+            pcall(c.SetUnit, c, NO_UNIT)
+            pcall(c.SetEnabled, c, false)
         end
     end
-    f:SetHeight(math.max(1, math.min(#units, MAX_ROWS)) * (ICON + GAP))
 end
 
 -- ---------------------------------------------------------------------------
