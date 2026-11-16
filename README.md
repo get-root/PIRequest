@@ -57,5 +57,5 @@ MIT
 ## Sound & Power Infusion cooldown
 
 - **Sound picker** (options → *Tous les sons…*): recommended sounds, sounds shared by other addons through LibSharedMedia (BigWigs, WeakAuras, SharedMedia…), and ~1200 game sounds grouped by category. A raw FileDataID can still be typed in.
-- **Muted while Power Infusion is on cooldown** (optional): alerts are re-armed a few seconds before PI is ready (10 s by default, configurable), so a DPS re-using a 2-minute cooldown right on time is not missed.
+- **Banner hidden while Power Infusion is on cooldown** (optional): the banner is re-armed a few seconds before PI is ready (10 s by default, configurable). The engine sound and icons used in dungeons/combat stay registered: the game refuses new sound registrations while auras are secret, so removing them during the cooldown would silence the addon for the rest of the key.
 - In raid, engine sounds are registered per player for their own class's cooldowns only (plus potions and custom IDs).

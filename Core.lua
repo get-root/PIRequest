@@ -333,7 +333,7 @@ local function HandleSlash(msg)
 
     elseif cmd == "scan" then
         -- Diagnostic : ce que l'addon surveille réellement.
-        local units = PIReq.ActiveUnits()
+        local units = PIReq.TrackedUnits()
         local n = 0
         for _ in pairs(PIReq.spellSet) do n = n + 1 end
         print_(string.format("%d unit(s) surveillée(s), %d spellId(s) actifs, sons moteur=%d, icônes moteur=%d",

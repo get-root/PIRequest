@@ -51,8 +51,6 @@ réservés » : **ne rien copier** (ni code ni listes).
 ### Pièges connus
 - `UnitName`/`GetUnitName` peuvent être secrets : `PIReq.UnitShortName` garde un cache.
 - `UNIT_SPELLCAST_SUCCEEDED` inutilisable pour les autres joueurs.
-- `AddAuraSound` : pas de report en combat (sinon plus de son quand PI revient en
-  plein combat) ; un refus est retenté 10 × toutes les 5 s (`pendingSync`).
 - Le bouton `CustomAuraButtonTemplate` n'a **aucune taille** et le flow layout ne
   fait que le positionner : `button:SetSize` obligatoire dans `initializeFrame`
   (sinon bouton 0×0, rien de dessiné). `initializeFrame` passe par
@@ -69,10 +67,14 @@ réservés » : **ne rien copier** (ni code ni listes).
   Sélecteur (`Options.lua`) : presets + LibSharedMedia (`HashTable("sound")`) +
   `SoundCatalog.lua` (1200 sons du jeu), par catégories, noms nettoyés.
 - Recharge de PI (`hideOnCooldown`) : PI détectée par `UNIT_SPELLCAST_SUCCEEDED`
-  du joueur ; sons et icônes retirés pendant la recharge puis **réarmés `piLead`
-  secondes avant la fin** (défaut 10 → 1 min 50). Ne pas couper 120 s pleines :
-  le DPS relance son CD de 2 min avant que PI soit revenue, et le son moteur ne
-  part qu'à l'AJOUT de l'aura.
+  du joueur ; ne coupe **que la bannière** (chemin lisible), réarmée `piLead`
+  secondes avant la fin. ⚠️ **Ne jamais retirer les sons/icônes moteur pendant
+  la recharge** : `AddAuraSound` est « HasRestrictions », le ré-enregistrement
+  2 min plus tard tombe en contexte secret (clé/combat) et est refusé → le son
+  marchait une fois puis plus du tout jusqu'à un changement de zone.
+- `RegisterSounds` ajoute d'abord les nouveaux sons et ne retire les anciens que
+  si le premier ajout est accepté (un refus conserve l'existant) ; nouvel essai
+  toutes les 15 s tant que `pendingSync`.
 - `GetUnitAuraBySpellID` ne marche pas pour ces CDs en contexte secret (tous
   « secrets selon contexte ») : le sondage (ancien `Poller.lua`) a été supprimé.
 - ⚠️ Code écrit **sans client** : le son moteur est confirmé en M+ ; le rendu

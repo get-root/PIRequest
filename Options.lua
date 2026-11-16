@@ -350,7 +350,7 @@ local function Build()
         function(v) db.enabled = v; PIReq.Refresh() end); y = y - 26
     Checkbox("Son d'alerte", 8, y, function() return db.sound end,
         function(v) db.sound = v; PIReq.Refresh() end); y = y - 26
-    Checkbox("Masquer les alertes pendant la recharge de Power Infusion", 8, y, function() return db.hideOnCooldown end,
+    Checkbox("Masquer la bannière pendant la recharge de Power Infusion (le son de donjon reste actif)", 8, y, function() return db.hideOnCooldown end,
         function(v) db.hideOnCooldown = v; PIReq.Refresh() end); y = y - 26
     Text("GameFontHighlight", "Réarmer les alertes", 38, y - 5)
     local leadBox = EditBox(180, y - 1, 36, function(text) PIReq.SetPILead(text); PIReq.RefreshOptions() end)
