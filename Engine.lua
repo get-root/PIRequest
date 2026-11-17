@@ -494,19 +494,19 @@ function PIReq_EngineContainerTest(unit, useFilter)
             tostring(try(c.GetWidth, c)), tostring(try(c.GetHeight, c)), tostring(PIReq.IsRestricted())))
         local n = try(c.GetAuraGroupFrameCount, c, "test")
         local shownCount, detail = 0, {}
-        if type(n) == "number" then
-            for i = 1, n do
-                local b = try(c.GetAuraGroupFrame, c, "test", i)
-                if type(b) == "table" then
-                    local sh = try(b.IsShown, b)
-                    if sh == true then shownCount = shownCount + 1 end
-                    if i <= 2 then
-                        local w, h = try(b.GetSize, b)
-                        detail[#detail + 1] = string.format("#%d shown=%s taille=%sx%s", i, tostring(sh), tostring(w), tostring(h))
-                    end
+        -- Tout est protégé : lire un bouton d'aura depuis l'addon peut être interdit.
+        local okB, errB = pcall(function()
+            for i = 1, (type(n) == "number" and n or 0) do
+                local b = c:GetAuraGroupFrame("test", i)
+                local sh = b:IsShown()
+                if sh == true then shownCount = shownCount + 1 end
+                if i <= 2 then
+                    local w, h = b:GetSize()
+                    detail[#detail + 1] = string.format("#%d shown=%s taille=%sx%s", i, tostring(sh), tostring(w), tostring(h))
                 end
             end
-        end
+        end)
+        if not okB then detail[#detail + 1] = "lecture des boutons impossible : " .. tostring(errB) end
         PIReq.Print(string.format("ctest boutons : %s créés, %d affichés. %s", tostring(n), shownCount, table.concat(detail, " ; ")))
     end)
     C_Timer.After(20, function()
